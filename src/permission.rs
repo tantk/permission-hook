@@ -100,8 +100,8 @@ pub struct InlineScript {
 }
 
 pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
-    // Python: python -c "..." or python3 -c "..."
-    let python_re = Regex::new(r#"^python3?\s+-c\s+["'](.*)["']"#).ok()?;
+    // Python: python -c "..." or python3 -c "..." (handles multi-line)
+    let python_re = Regex::new(r#"(?s)^python3?\s+-c\s+["'](.*)["']"#).ok()?;
     if let Some(caps) = python_re.captures(command) {
         return Some(InlineScript {
             script_type: "python".into(),
@@ -109,8 +109,8 @@ pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
         });
     }
 
-    // Python without quotes
-    let python_re2 = Regex::new(r"^python3?\s+-c\s+(\S.*)$").ok()?;
+    // Python with multi-line content (quotes may span lines)
+    let python_re2 = Regex::new(r#"(?s)^python3?\s+-c\s+["']?(.*)"#).ok()?;
     if let Some(caps) = python_re2.captures(command) {
         return Some(InlineScript {
             script_type: "python".into(),
@@ -118,8 +118,8 @@ pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
         });
     }
 
-    // Node: node -e "..."
-    let node_re = Regex::new(r#"^node\s+-e\s+["'](.*)["']"#).ok()?;
+    // Node: node -e "..." (handles multi-line)
+    let node_re = Regex::new(r#"(?s)^node\s+-e\s+["'](.*)["']"#).ok()?;
     if let Some(caps) = node_re.captures(command) {
         return Some(InlineScript {
             script_type: "node".into(),
@@ -127,8 +127,8 @@ pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
         });
     }
 
-    // Node without quotes
-    let node_re2 = Regex::new(r"^node\s+-e\s+(\S.*)$").ok()?;
+    // Node with multi-line content
+    let node_re2 = Regex::new(r#"(?s)^node\s+-e\s+["']?(.*)"#).ok()?;
     if let Some(caps) = node_re2.captures(command) {
         return Some(InlineScript {
             script_type: "node".into(),
@@ -136,8 +136,8 @@ pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
         });
     }
 
-    // PowerShell: powershell -Command "..." or powershell.exe -Command "..."
-    let ps_re = Regex::new(r#"(?i)^powershell(?:\.exe)?\s+(?:-Command|-c)\s+["'](.*)["']"#).ok()?;
+    // PowerShell: powershell -Command "..." (handles multi-line)
+    let ps_re = Regex::new(r#"(?si)^powershell(?:\.exe)?\s+(?:-Command|-c)\s+["'](.*)["']"#).ok()?;
     if let Some(caps) = ps_re.captures(command) {
         return Some(InlineScript {
             script_type: "powershell".into(),
@@ -145,8 +145,8 @@ pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
         });
     }
 
-    // PowerShell without quotes
-    let ps_re2 = Regex::new(r"(?i)^powershell(?:\.exe)?\s+(?:-Command|-c)\s+(.+)$").ok()?;
+    // PowerShell with multi-line content
+    let ps_re2 = Regex::new(r#"(?si)^powershell(?:\.exe)?\s+(?:-Command|-c)\s+["']?(.*)"#).ok()?;
     if let Some(caps) = ps_re2.captures(command) {
         return Some(InlineScript {
             script_type: "powershell".into(),
@@ -154,8 +154,8 @@ pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
         });
     }
 
-    // CMD: cmd /c "..." or cmd.exe /c "..."
-    let cmd_re = Regex::new(r#"(?i)^cmd(?:\.exe)?\s+/c\s+["'](.*)["']"#).ok()?;
+    // CMD: cmd /c "..." (handles multi-line)
+    let cmd_re = Regex::new(r#"(?si)^cmd(?:\.exe)?\s+/c\s+["'](.*)["']"#).ok()?;
     if let Some(caps) = cmd_re.captures(command) {
         return Some(InlineScript {
             script_type: "cmd".into(),
@@ -163,8 +163,8 @@ pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
         });
     }
 
-    // CMD without quotes
-    let cmd_re2 = Regex::new(r"(?i)^cmd(?:\.exe)?\s+/c\s+(.+)$").ok()?;
+    // CMD with multi-line content
+    let cmd_re2 = Regex::new(r#"(?si)^cmd(?:\.exe)?\s+/c\s+["']?(.*)"#).ok()?;
     if let Some(caps) = cmd_re2.captures(command) {
         return Some(InlineScript {
             script_type: "cmd".into(),
