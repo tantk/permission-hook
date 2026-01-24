@@ -14,6 +14,8 @@ mod analyzer;
 mod state;
 mod dedup;
 mod platform;
+mod summary;
+mod notifier;
 
 use config::{load_config, Config};
 use permission::{HookInput, HookResponse, is_auto_approved, is_auto_denied, ask_llm, extract_details};
@@ -21,6 +23,8 @@ use logging::{log_decision, log_prompt, debug};
 use analyzer::{analyze_transcript, get_status_for_pre_tool_use, Status};
 use state::Manager as StateManager;
 use dedup::Manager as DedupManager;
+use notifier::{send_notification, should_notify};
+use summary::generate_summary;
 
 use std::io::{self, BufRead};
 
@@ -137,8 +141,31 @@ fn handle_stop(config: &Config, input: &HookInput, state_mgr: &StateManager, ded
     // Log the status detection
     debug(config, &format!("Detected status: {:?}", status));
 
-    // TODO Phase 2: Send notification here
-    // For now, just log it
+    // Send notification if enabled
+    if should_notify(config, status) {
+        // Parse transcript to generate summary
+        let summary = match jsonl::parse_transcript(transcript_path) {
+            Ok(messages) => generate_summary(&messages, status),
+            Err(_) => String::new(),
+        };
+
+        let cwd = input.get_cwd();
+        let git_branch = platform::get_git_branch(&cwd);
+
+        if let Err(e) = send_notification(
+            config,
+            status,
+            &summary,
+            &session_id,
+            &cwd,
+            git_branch.as_deref(),
+        ) {
+            logging::warn(&format!("Failed to send notification: {}", e));
+        } else {
+            debug(config, &format!("Notification sent: {} - {}", status.as_str(), summary));
+        }
+    }
+
     log_decision(config, "Stop", "notify", status.as_str(), Some(&session_id));
 
     // Cleanup old locks/state
@@ -207,7 +234,25 @@ fn handle_notification(config: &Config, input: &HookInput, state_mgr: &StateMana
     // Log the notification
     debug(config, "Detected status: Question (permission prompt)");
 
-    // TODO Phase 2: Send notification here
+    // Send notification if enabled
+    if should_notify(config, status) {
+        let cwd = input.get_cwd();
+        let git_branch = platform::get_git_branch(&cwd);
+
+        if let Err(e) = send_notification(
+            config,
+            status,
+            "Permission required",
+            &session_id,
+            &cwd,
+            git_branch.as_deref(),
+        ) {
+            logging::warn(&format!("Failed to send notification: {}", e));
+        } else {
+            debug(config, "Notification sent: question - Permission required");
+        }
+    }
+
     log_decision(config, "Notification", "notify", "question", Some(&session_id));
 }
 

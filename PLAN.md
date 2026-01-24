@@ -76,30 +76,30 @@ No notifications sent yet - just logging.
 
 ---
 
-## Phase 2: Desktop Notifications
+## Phase 2: Desktop Notifications ✅ COMPLETE
 
 **Goal**: Send native desktop notifications when Claude needs attention.
 
 ### Tasks
 
-- [ ] **2.1** Add `notify-rust` dependency for cross-platform notifications
+- [x] **2.1** Add `notify-rust` dependency for cross-platform notifications
 
-- [ ] **2.2** Implement notifier module (`notifier.rs`)
+- [x] **2.2** Implement notifier module (`notifier.rs`)
   - Send desktop notifications
   - Platform-specific handling (Windows/macOS/Linux)
   - Notification title with emoji + status
 
-- [ ] **2.3** Implement summary generator (`summary.rs`)
+- [x] **2.3** Implement summary generator (`summary.rs`)
   - Generate concise notification messages
   - Markdown cleanup (remove code blocks, links, etc.)
   - Status-specific message generation
   - 150 character limit with truncation
 
-- [ ] **2.4** Implement session name generator
+- [x] **2.4** Implement session name generator
   - Generate friendly session names from session ID
   - Include git branch and folder name
 
-- [ ] **2.5** Add notification config section
+- [x] **2.5** Add notification config section
   ```json
   {
     "notifications": {
@@ -113,16 +113,19 @@ No notifications sent yet - just logging.
   }
   ```
 
-- [ ] **2.6** Wire up notifications in hook handler
+- [x] **2.6** Wire up notifications in hook handler
   - Send notification after status detection
   - Respect cooldown settings
   - Check per-status enabled flags
 
 ### Testing Phase 2
-- [ ] Unit tests for summary generation
-- [ ] Unit tests for markdown cleanup
+- [x] Unit tests for summary generation (11 tests)
+- [x] Unit tests for markdown cleanup (4 tests)
+- [x] Unit tests for notifier (2 tests)
 - [ ] Manual test: verify notifications appear on Windows
 - [ ] Manual test: cooldown suppression works
+
+**Total: 120 tests passing**
 
 ### Deliverable
 Desktop notifications appear when:
@@ -359,7 +362,7 @@ The config file will be backward compatible - existing permission settings prese
 | Phase | Scope | Status |
 |-------|-------|--------|
 | Phase 1 | Core Infrastructure | ✅ Complete |
-| Phase 2 | Desktop Notifications | Not Started |
+| Phase 2 | Desktop Notifications | ✅ Complete |
 | Phase 3 | Sound Playback | Not Started |
 | Phase 4 | Webhooks | Not Started |
 | Phase 5 | Plugin Integration | Not Started |
