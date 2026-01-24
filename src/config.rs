@@ -11,6 +11,8 @@ use std::path::PathBuf;
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct Config {
     #[serde(default)]
+    pub features: FeaturesConfig,
+    #[serde(default)]
     pub auto_approve: AutoApproveConfig,
     #[serde(default)]
     pub auto_deny: AutoDenyConfig,
@@ -22,6 +24,23 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub notifications: NotificationsConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct FeaturesConfig {
+    #[serde(default = "default_true")]
+    pub permission_checking: bool,
+    #[serde(default = "default_true")]
+    pub notifications: bool,
+}
+
+impl Default for FeaturesConfig {
+    fn default() -> Self {
+        Self {
+            permission_checking: true,
+            notifications: true,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -68,6 +87,8 @@ pub struct InlineScriptsConfig {
     pub dangerous_node_patterns: Vec<String>,
     #[serde(default)]
     pub dangerous_powershell_patterns: Vec<String>,
+    #[serde(default)]
+    pub dangerous_cmd_patterns: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -164,6 +185,7 @@ pub fn get_prompts_path() -> PathBuf {
 
 pub fn default_config() -> Config {
     Config {
+        features: FeaturesConfig::default(),
         auto_approve: AutoApproveConfig {
             tools: vec![
                 "Read".into(), "Glob".into(), "Grep".into(),
@@ -248,6 +270,14 @@ pub fn default_config() -> Config {
                 r"(?i)Disable-".into(),
                 r"(?i)Stop-Service".into(),
                 r"(?i)Uninstall-".into(),
+            ],
+            dangerous_cmd_patterns: vec![
+                r"(?i)\bdel\b".into(),
+                r"(?i)\brd\b".into(),
+                r"(?i)\brmdir\b".into(),
+                r"(?i)\berase\b".into(),
+                r"(?i)\bformat\b".into(),
+                r"(?i)\bdiskpart\b".into(),
             ],
         },
         ambiguous: AmbiguousConfig {

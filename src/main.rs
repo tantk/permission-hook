@@ -25,15 +25,21 @@ use logging::{log_decision, log_prompt, debug};
 use analyzer::{analyze_transcript, get_status_for_pre_tool_use, Status};
 use state::Manager as StateManager;
 use dedup::Manager as DedupManager;
-use notifier::{send_notification, should_notify};
+use notifier::{send_notification, send_alert_notification, should_notify};
 use summary::{generate_summary, generate_session_name};
-use audio::play_sound;
+use audio::{play_sound, play_alert_sound};
 use webhook::{send_webhook, should_send_webhook, CircuitBreaker, RateLimiter};
 
 use std::io::{self, BufRead};
 
 /// Handle PreToolUse hook event (permission decisions)
 fn handle_pre_tool_use(config: &Config, input: &HookInput, state_mgr: &StateManager) {
+    // Skip permission checking if disabled
+    if !config.features.permission_checking {
+        debug(config, "Permission checking disabled, passing through");
+        std::process::exit(0);
+    }
+
     let tool_name = input.get_tool_name();
     let tool_input = input.get_tool_input();
     let details = extract_details(&tool_input);
@@ -53,6 +59,13 @@ fn handle_pre_tool_use(config: &Config, input: &HookInput, state_mgr: &StateMana
     // Tier 2: Check auto-deny
     if let Some(reason) = is_auto_denied(config, &tool_name, &tool_input) {
         log_decision(config, &tool_name, "deny", &reason, details_ref);
+
+        // Send alert notification and sound
+        if config.features.notifications {
+            let _ = send_alert_notification(config, &tool_name, &reason, details_ref);
+            let _ = play_alert_sound(config);
+        }
+
         eprintln!("[permission-hook] DENY: {} - {}", tool_name, reason);
         std::process::exit(2);
     }
@@ -101,6 +114,12 @@ fn handle_stop(
     circuit_breaker: &mut CircuitBreaker,
     rate_limiter: &mut RateLimiter,
 ) {
+    // Skip if notifications feature is disabled
+    if !config.features.notifications {
+        debug(config, "Notifications feature disabled, skipping Stop handler");
+        return;
+    }
+
     let session_id = input.get_session_id();
     let transcript_path = input.transcript_path.as_deref().unwrap_or("");
 
@@ -207,6 +226,12 @@ fn handle_subagent_stop(
     circuit_breaker: &mut CircuitBreaker,
     rate_limiter: &mut RateLimiter,
 ) {
+    // Skip if notifications feature is disabled
+    if !config.features.notifications {
+        debug(config, "Notifications feature disabled, skipping SubagentStop handler");
+        return;
+    }
+
     if !config.notifications.notify_on_subagent_stop {
         debug(config, "SubagentStop notifications disabled");
         return;
@@ -225,6 +250,12 @@ fn handle_notification(
     circuit_breaker: &mut CircuitBreaker,
     rate_limiter: &mut RateLimiter,
 ) {
+    // Skip if notifications feature is disabled
+    if !config.features.notifications {
+        debug(config, "Notifications feature disabled, skipping Notification handler");
+        return;
+    }
+
     let session_id = input.get_session_id();
 
     debug(config, &format!("Notification event: session={}", session_id));

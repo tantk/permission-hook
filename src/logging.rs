@@ -2,19 +2,10 @@
 
 use crate::config::{get_config_dir, get_log_path, get_prompts_path, Config};
 use chrono::Utc;
-use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 
-#[derive(Debug, Serialize)]
-pub struct LogEntry {
-    pub timestamp: String,
-    pub tool: String,
-    pub decision: String,
-    pub reason: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<String>,
-}
+const CSV_HEADER: &str = "timestamp,tool,decision,reason,details";
 
 /// Truncate string to max length
 pub fn truncate(s: &str, max_len: usize) -> String {
@@ -22,6 +13,25 @@ pub fn truncate(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..max_len])
+    }
+}
+
+/// Escape CSV field (wrap in quotes if contains comma, quote, or newline)
+fn escape_csv(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// Convert decision to short code
+fn decision_code(decision: &str) -> &str {
+    match decision {
+        "allow" => "Y",
+        "deny" => "N",
+        "prompt" => "ASK",
+        _ => decision,
     }
 }
 
@@ -34,22 +44,32 @@ pub fn log_decision(config: &Config, tool: &str, decision: &str, reason: &str, d
     let log_dir = get_config_dir();
     let _ = fs::create_dir_all(&log_dir);
 
-    let entry = LogEntry {
-        timestamp: Utc::now().to_rfc3339(),
-        tool: tool.to_string(),
-        decision: decision.to_string(),
-        reason: truncate(reason, 150),
-        details: details.map(|d| truncate(d, 100)),
-    };
+    let log_path = get_log_path();
 
-    if let Ok(json) = serde_json::to_string(&entry) {
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(get_log_path())
-        {
-            let _ = writeln!(file, "{}", json);
+    // Check if file is empty/new to write header
+    let needs_header = !log_path.exists() || fs::metadata(&log_path).map(|m| m.len() == 0).unwrap_or(true);
+
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        // Write header if new file
+        if needs_header {
+            let _ = writeln!(file, "{}", CSV_HEADER);
         }
+
+        // Format: timestamp,tool,decision,reason,details
+        let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        let line = format!(
+            "{},{},{},{},{}",
+            timestamp,
+            tool,
+            decision_code(decision),
+            escape_csv(&truncate(reason, 150)),
+            escape_csv(&truncate(details.unwrap_or("-"), 100))
+        );
+        let _ = writeln!(file, "{}", line);
     }
 }
 

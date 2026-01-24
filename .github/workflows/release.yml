@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-action@stable
+      with:
+        toolchain: stable
+
+    - name: Build Release
+      run: cargo build --release
+
+    - name: Run Tests
+      run: cargo test --release
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: claude-permission-hook-windows
+        path: target/release/claude-permission-hook.exe
+
+  release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download Windows Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: claude-permission-hook-windows
+        path: artifacts/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          artifacts/claude-permission-hook.exe
+        body: |
+          ## Installation
+
+          1. Download `claude-permission-hook.exe`
+          2. Place in `%USERPROFILE%\.local\bin\`
+          3. Configure Claude Code hooks (see README)
+
+          ## What's New
+
+          See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full documentation.
+        draft: false
+        prerelease: false

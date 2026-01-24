@@ -42,6 +42,51 @@ pub fn send_notification(
     }
 }
 
+/// Send an alert notification for blocked/denied commands
+pub fn send_alert_notification(
+    config: &Config,
+    tool: &str,
+    reason: &str,
+    details: Option<&str>,
+) -> Result<(), String> {
+    if !config.notifications.desktop.enabled {
+        return Ok(());
+    }
+
+    let title = "BLOCKED";
+
+    // Build prominent alert body
+    let detail_str = details.unwrap_or("-");
+    let body = format!(
+        "Command denied by security policy\n\n{}: {}\nReason: {}",
+        tool,
+        truncate_detail(detail_str, 60),
+        reason
+    );
+
+    // Send notification with longer timeout for alerts
+    let result = Notification::new()
+        .summary(title)
+        .body(&body)
+        .appname("Claude Code")
+        .timeout(notify_rust::Timeout::Milliseconds(8000))
+        .show();
+
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("Failed to send alert notification: {}", e)),
+    }
+}
+
+/// Truncate detail string for display
+fn truncate_detail(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len])
+    }
+}
+
 /// Check if notifications should be sent for this status
 pub fn should_notify(config: &Config, status: Status) -> bool {
     if !config.notifications.desktop.enabled {

@@ -1,42 +1,44 @@
 # Claude Permission Hook
 
-A fast, open-source auto-permission handler for Claude Code and other AI coding assistants.
+A fast, Rust-based permission handler and notification system for Claude Code.
 
-**Written in Rust for minimal overhead (~1-5ms per call).**
+**Features:**
+- Auto-approve safe operations (reading files, git status, etc.)
+- Auto-block dangerous operations (rm -rf, force push, etc.) with alert sound
+- Desktop notifications when Claude completes tasks or needs attention
+- Inline script scanning (Python, Node, PowerShell, CMD)
 
-## What It Does
-
-Intercepts permission prompts and automatically:
-- **Approves** safe operations (reading files, git status, etc.)
-- **Blocks** dangerous operations (rm -rf, force push, etc.)
-- **Prompts you** for everything else
-
-## Performance
-
-| Implementation | Startup Time | Per-call Overhead |
-|----------------|--------------|-------------------|
-| Node.js hooks | ~50-100ms | ~50-100ms |
-| **This (Rust)** | **~1-5ms** | **~1-5ms** |
+**Performance:** ~1-5ms per call (vs ~50-100ms for Node.js hooks)
 
 ## Installation
 
-### Build from Source
+### Option 1: Download Release (Recommended)
 
-```bash
+1. Download `claude-permission-hook.exe` from [Releases](https://github.com/user/claude-permission-hook/releases)
+2. Place in `%USERPROFILE%\.local\bin\` (create folder if needed)
+3. Configure Claude Code (see below)
+
+### Option 2: Build from Source
+
+```powershell
 # Install Rust (if needed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+winget install Rustlang.Rust.MSVC
 
 # Clone and build
-git clone https://github.com/tantk/permission-hook.git
-cd permission-hook
+git clone https://github.com/user/claude-permission-hook.git
+cd claude-permission-hook
 cargo build --release
 
-# Binary at: target/release/claude-permission-hook
+# Copy to install location
+mkdir $env:USERPROFILE\.local\bin -Force
+copy target\release\claude-permission-hook.exe $env:USERPROFILE\.local\bin\
 ```
 
-### Configure Claude Code
+## Configuration
 
-Add to `~/.claude/settings.json`:
+### Step 1: Configure Claude Code Hooks
+
+Add to `%USERPROFILE%\.claude\settings.json`:
 
 ```json
 {
@@ -44,110 +46,80 @@ Add to `~/.claude/settings.json`:
     "PreToolUse": [
       {
         "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/path/to/claude-permission-hook"
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "C:\\Users\\YOUR_USERNAME\\.local\\bin\\claude-permission-hook.exe" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "C:\\Users\\YOUR_USERNAME\\.local\\bin\\claude-permission-hook.exe" }]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [{ "type": "command", "command": "C:\\Users\\YOUR_USERNAME\\.local\\bin\\claude-permission-hook.exe" }]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [{ "type": "command", "command": "C:\\Users\\YOUR_USERNAME\\.local\\bin\\claude-permission-hook.exe" }]
       }
     ]
   }
 }
 ```
 
-**Restart Claude Code once** to activate.
+Replace `YOUR_USERNAME` with your Windows username.
 
-## How It Works
+### Step 2: Create Plugin Config (Optional)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Claude wants to run: Bash { command: "git status" }            │
-└─────────────────────────────┬───────────────────────────────────┘
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     TIER 1: Is it safe?                         │
-│  • Tool in safe list? (Read, Glob, Grep)                       │
-│  • Command matches safe pattern? (git status, ls)              │
-│  • Inline script passes safety check?                          │
-│  ✓ YES → Auto-approve                                          │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │ NO
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   TIER 2: Is it dangerous?                      │
-│  • Command matches dangerous pattern? (rm -rf, sudo rm)        │
-│  • File path protected? (/etc/, C:\Windows)                    │
-│  ✓ YES → Auto-block                                            │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │ NO
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   TIER 3: Ambiguous                             │
-│  • mode: "ask" → Prompt user (default)                         │
-│  • mode: "llm" → Ask GPT-4o-mini (optional)                    │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## What Gets Auto-Approved
-
-### Tools
-`Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TaskList`, `TaskGet`, `TaskCreate`, `TaskUpdate`
-
-### Bash Commands
-- `git status/log/diff/branch/show/remote/fetch`
-- `ls`, `pwd`, `cat`, `head`, `tail`
-- `npm list/outdated/view`, `node --version`
-- `python --version`, `pip list`
-- `docker ps/images/logs`
-- `gh repo/pr/issue view/list/status`
-- `whoami`, `hostname`, `date`, `uname`, `env`
-
-### Inline Scripts
-Python/Node/PowerShell scripts auto-approved **unless** they contain:
-- Python: `os.remove`, `os.system`, `shutil.rmtree`, `subprocess`
-- Node: `child_process`, `fs.unlink`, `fs.rmdir`
-- PowerShell: `Remove-Item`, `Stop-Process`, `Invoke-Expression`
-
-### MCP Tools
-Auto-approved if name contains: `get`, `list`, `read`, `fetch`, `search`, `view`
-
-## What Gets Auto-Blocked
-
-### Dangerous Commands
-- `rm -rf /`, `rm -rf ~`, `rm -rf *`
-- `git push --force`, `git reset --hard`
-- `curl ... | sh`, `wget ... | sh`
-- `sudo rm`, `npm publish`, `mkfs`, `dd of=/dev`
-
-### Protected Paths
-`/etc/`, `/usr/`, `/bin/`, `C:\Windows`, `C:\Program Files`
-
-### MCP Tools
-Blocked if name contains: `delete`, `remove`, `destroy`, `wipe`, `purge`
-
-## Configuration
-
-Config file: `~/.claude-permission-hook/config.json`
+Create `%USERPROFILE%\.claude-permission-hook\config.json`:
 
 ```json
 {
+  "features": {
+    "permission_checking": true,
+    "notifications": true
+  },
   "auto_approve": {
-    "tools": ["Read", "Glob", "Grep", "Task"],
-    "bash_patterns": ["^git\\s+(status|log|diff)", "^ls(\\s|$)"]
+    "tools": ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "TaskList", "TaskGet", "TaskCreate", "TaskUpdate", "Edit", "Write"],
+    "bash_patterns": [
+      "^(cd\\s+[^&]+&&\\s*)?git\\s+(status|log|diff|branch|show|remote|fetch)",
+      "^(cmd\\s+/c\\s+)?cargo\\s+(build|test|check|clippy|fmt|run)",
+      "^curl\\s",
+      "^wget\\s",
+      "^ls(\\s|$)",
+      "^pwd$",
+      "^npm\\s+(list|ls|outdated|view|info|search)",
+      "^docker\\s+(ps|images|inspect|logs)",
+      "^gh\\s+(repo|pr|issue|release)\\s+(view|list|status)"
+    ]
   },
   "auto_deny": {
-    "bash_patterns": ["rm\\s+-rf", "git\\s+push.*--force"],
-    "protected_paths": ["^/etc/"]
+    "bash_patterns": [
+      "rm\\s+(-rf?|--recursive)?\\s*[/~]",
+      "git\\s+push.*--force",
+      "git\\s+reset\\s+--hard",
+      "curl.*\\|\\s*(ba)?sh"
+    ],
+    "protected_paths": [
+      "(?i)^C:\\\\Windows",
+      "(?i)^C:\\\\Program Files"
+    ]
   },
   "inline_scripts": {
     "enabled": true,
-    "dangerous_python_patterns": ["os\\.remove", "subprocess"],
-    "dangerous_node_patterns": ["child_process"],
-    "dangerous_powershell_patterns": ["(?i)Remove-Item", "(?i)Invoke-Expression"]
+    "dangerous_python_patterns": ["os\\.remove", "shutil\\.rmtree", "subprocess"],
+    "dangerous_node_patterns": ["child_process", "fs\\.unlink", "rimraf"],
+    "dangerous_powershell_patterns": ["(?i)Remove-Item", "(?i)Format-Volume", "(?i)Stop-Process"],
+    "dangerous_cmd_patterns": ["(?i)\\bdel\\b", "(?i)\\brd\\b", "(?i)\\bformat\\b"]
   },
-  "ambiguous": {
-    "mode": "ask"
+  "notifications": {
+    "desktop": {
+      "enabled": true,
+      "sound": true,
+      "volume": 1.0
+    }
   },
   "logging": {
     "enabled": true,
@@ -156,45 +128,117 @@ Config file: `~/.claude-permission-hook/config.json`
 }
 ```
 
-**Config changes take effect immediately** (no restart needed).
+**Restart Claude Code** to activate hooks.
 
-## Logging
+## How It Works
 
-All decisions logged to `~/.claude-permission-hook/decisions.log`:
-
-```json
-{"timestamp":"2025-01-24T10:30:45Z","tool":"Bash","decision":"allow","reason":"...","details":"git status"}
-{"timestamp":"2025-01-24T10:30:48Z","tool":"Bash","decision":"deny","reason":"...","details":"rm -rf /"}
-{"timestamp":"2025-01-24T10:30:52Z","tool":"Bash","decision":"prompt","reason":"...","details":"npm test"}
+```
+Claude wants to run a command
+         │
+         ▼
+┌─────────────────────────────┐
+│   TIER 1: Auto-Approve?     │
+│   • Tool in safe list?      │
+│   • Safe bash pattern?      │
+│   • Safe inline script?     │
+│   YES → Allow (silent)      │
+└──────────────┬──────────────┘
+               │ NO
+               ▼
+┌─────────────────────────────┐
+│   TIER 2: Auto-Deny?        │
+│   • Dangerous pattern?      │
+│   • Protected path?         │
+│   YES → Block + Alert       │
+└──────────────┬──────────────┘
+               │ NO
+               ▼
+┌─────────────────────────────┐
+│   TIER 3: Prompt User       │
+└─────────────────────────────┘
 ```
 
-Recent prompts (for debugging): `~/.claude-permission-hook/recent_prompts.log`
+## Features
 
-## Optional: LLM for Tier 3
+### Permission Handling
+| Decision | Sound | Notification |
+|----------|-------|--------------|
+| Allow | Silent | None |
+| Block | Alert sound | "BLOCKED" popup |
+| Prompt | Normal | On task complete |
 
-Instead of prompting, use an LLM to decide:
+### Inline Script Scanning
+
+Scripts are auto-approved unless they contain dangerous patterns:
+
+| Type | Dangerous Patterns |
+|------|-------------------|
+| Python | `os.remove`, `shutil.rmtree`, `subprocess` |
+| Node | `child_process`, `fs.unlink`, `rimraf` |
+| PowerShell | `Remove-Item`, `Format-Volume`, `Stop-Process` |
+| CMD | `del`, `rd`, `rmdir`, `format`, `diskpart` |
+
+### Desktop Notifications
+- Task complete
+- Plan ready for review
+- Permission required
+- Session limit reached
+
+## Log Format
+
+Logs saved to `%USERPROFILE%\.claude-permission-hook\decisions.log`:
+
+```csv
+timestamp,tool,decision,reason,details
+2026-01-24T19:22:38,Read,Y,auto-approve tool,test.txt
+2026-01-24T19:22:40,Bash,N,dangerous pattern,rm -rf /
+2026-01-24T19:22:45,Bash,ASK,prompting user,python script.py
+```
+
+**Decision codes:** `Y` = allow, `N` = block, `ASK` = prompt user
+
+## Feature Toggles
+
+Disable features independently:
 
 ```json
 {
-  "ambiguous": {
-    "mode": "llm",
-    "llm": {
-      "model": "openai/gpt-4o-mini",
-      "api_key": "sk-or-v1-your-key",
-      "base_url": "https://openrouter.ai/api/v1"
-    }
+  "features": {
+    "permission_checking": false,
+    "notifications": true
   }
 }
 ```
 
-Cost: ~$0.0002 per decision (~$1 per 5,000 decisions)
+## Troubleshooting
 
-## Compatibility
+### Commands not auto-approved
+1. Check if tool is in `auto_approve.tools`
+2. Check if pattern matches `auto_approve.bash_patterns`
+3. Enable verbose logging: `"logging": { "verbose": true }`
+4. Check log: `type %USERPROFILE%\.claude-permission-hook\decisions.log`
 
-Works with:
-- **Claude Code** (primary target)
-- Any tool using stdin/stdout JSON hooks
+### No notifications
+1. Check `features.notifications: true`
+2. Check `notifications.desktop.enabled: true`
+
+### No alert sound on block
+1. Check `notifications.desktop.sound: true`
+2. Check Windows sound settings
+
+## Development
+
+```powershell
+# Run tests
+cargo test
+
+# Build release
+cargo build --release
+
+# Binary location
+target\release\claude-permission-hook.exe
+```
 
 ## License
 
-MIT - Free to use, modify, and distribute.
+MIT

@@ -154,6 +154,24 @@ pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
         });
     }
 
+    // CMD: cmd /c "..." or cmd.exe /c "..."
+    let cmd_re = Regex::new(r#"(?i)^cmd(?:\.exe)?\s+/c\s+["'](.*)["']"#).ok()?;
+    if let Some(caps) = cmd_re.captures(command) {
+        return Some(InlineScript {
+            script_type: "cmd".into(),
+            content: caps.get(1)?.as_str().into(),
+        });
+    }
+
+    // CMD without quotes
+    let cmd_re2 = Regex::new(r"(?i)^cmd(?:\.exe)?\s+/c\s+(.+)$").ok()?;
+    if let Some(caps) = cmd_re2.captures(command) {
+        return Some(InlineScript {
+            script_type: "cmd".into(),
+            content: caps.get(1)?.as_str().into(),
+        });
+    }
+
     None
 }
 
@@ -162,21 +180,19 @@ pub fn is_inline_script_safe(config: &Config, script: &InlineScript) -> (bool, S
         "python" => &config.inline_scripts.dangerous_python_patterns,
         "node" => &config.inline_scripts.dangerous_node_patterns,
         "powershell" => &config.inline_scripts.dangerous_powershell_patterns,
+        "cmd" => &config.inline_scripts.dangerous_cmd_patterns,
         _ => return (false, "Unknown script type".into()),
     };
 
     for pattern in patterns {
         if let Ok(re) = Regex::new(pattern) {
             if re.is_match(&script.content) {
-                return (false, format!(
-                    "Inline {} script contains dangerous pattern: {}",
-                    script.script_type, pattern
-                ));
+                return (false, format!("dangerous {}", script.script_type));
             }
         }
     }
 
-    (true, format!("Inline {} script passed safety check", script.script_type))
+    (true, format!("safe {}", script.script_type))
 }
 
 // ============================================================================
@@ -187,7 +203,7 @@ pub fn is_inline_script_safe(config: &Config, script: &InlineScript) -> (bool, S
 pub fn is_auto_approved(config: &Config, tool_name: &str, input: &serde_json::Value) -> Option<String> {
     // Check if tool is in auto-approve list
     if config.auto_approve.tools.iter().any(|t| t == tool_name) {
-        return Some(format!("Tool \"{}\" is in auto-approve list", tool_name));
+        return Some("auto-approve tool".into());
     }
 
     // Check Bash commands
@@ -199,7 +215,7 @@ pub fn is_auto_approved(config: &Config, tool_name: &str, input: &serde_json::Va
             for pattern in &config.auto_approve.bash_patterns {
                 if let Ok(re) = Regex::new(pattern) {
                     if re.is_match(command) {
-                        return Some(format!("Bash command matches safe pattern: {}", pattern));
+                        return Some("safe pattern".into());
                     }
                 }
             }
@@ -223,7 +239,7 @@ pub fn is_auto_approved(config: &Config, tool_name: &str, input: &serde_json::Va
 
         for pattern in safe_patterns {
             if mcp_tool_name.contains(pattern) {
-                return Some(format!("MCP tool \"{}\" appears to be read-only", mcp_tool_name));
+                return Some("read-only MCP".into());
             }
         }
     }
@@ -239,7 +255,7 @@ pub fn is_auto_denied(config: &Config, tool_name: &str, input: &serde_json::Valu
             for pattern in &config.auto_deny.bash_patterns {
                 if let Ok(re) = Regex::new(pattern) {
                     if re.is_match(command) {
-                        return Some(format!("Bash command matches dangerous pattern: {}", pattern));
+                        return Some("dangerous pattern".into());
                     }
                 }
             }
@@ -257,7 +273,7 @@ pub fn is_auto_denied(config: &Config, tool_name: &str, input: &serde_json::Valu
         for pattern in &config.auto_deny.protected_paths {
             if let Ok(re) = Regex::new(pattern) {
                 if re.is_match(file_path) {
-                    return Some(format!("File path \"{}\" is protected", file_path));
+                    return Some("protected path".into());
                 }
             }
         }
@@ -270,7 +286,7 @@ pub fn is_auto_denied(config: &Config, tool_name: &str, input: &serde_json::Valu
 
         for pattern in dangerous_patterns {
             if mcp_tool_name.contains(pattern) {
-                return Some(format!("MCP tool \"{}\" appears destructive", mcp_tool_name));
+                return Some("destructive MCP".into());
             }
         }
     }

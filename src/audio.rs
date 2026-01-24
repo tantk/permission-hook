@@ -30,6 +30,49 @@ pub fn play_sound(config: &Config, status: Status) -> Result<(), String> {
     play_system_sound()
 }
 
+/// Play alert sound for blocked/denied commands
+pub fn play_alert_sound(config: &Config) -> Result<(), String> {
+    if !config.notifications.desktop.sound {
+        return Ok(());
+    }
+
+    // Try custom alert sound first
+    let config_dir = crate::config::get_config_dir();
+    let alert_path = config_dir.join("sounds").join("alert.wav");
+    if alert_path.exists() {
+        if let Some(path) = alert_path.to_str() {
+            if play_sound_file(path, config.notifications.desktop.volume).is_ok() {
+                return Ok(());
+            }
+        }
+    }
+
+    // Fall back to system alert sound
+    play_system_alert()
+}
+
+/// Play system alert sound (more urgent than notification)
+#[cfg(target_os = "windows")]
+fn play_system_alert() -> Result<(), String> {
+    use std::process::Command;
+
+    // Use Hand sound (more urgent/alert-like)
+    let result = Command::new("powershell")
+        .args(["-Command", "[System.Media.SystemSounds]::Hand.Play()"])
+        .output();
+
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("Failed to play alert sound: {}", e)),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn play_system_alert() -> Result<(), String> {
+    // Fall back to regular system sound on other platforms
+    play_system_sound()
+}
+
 /// Get custom sound file path for status
 fn get_sound_file_for_status(_config: &Config, status: Status) -> Option<String> {
     // Default sound files in config directory

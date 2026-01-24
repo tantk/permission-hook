@@ -10,49 +10,136 @@
 | **Claude Settings** | `C:\Users\tanti\.claude\settings.json` |
 | **Source Code** | `C:\dev\plugin\src\` |
 | **Language** | Rust |
-| **Test Count** | 148 tests passing |
 
 ---
 
-## Session Summary
+## Features
 
-### What Was Done
+### 1. Permission Handling
+- Auto-approve safe tools (Read, Glob, Grep, Edit, Write, etc.)
+- Auto-approve safe bash commands (git, cargo, curl, wget, etc.)
+- Auto-deny dangerous commands (rm -rf, git push --force)
+- Inline script scanning (Python, Node, PowerShell, CMD)
+- Protected path blocking (C:\Windows, C:\Program Files, /etc/)
 
-**Merged `claude-notifications-go` functionality into `permission-hook` (Rust):**
+### 2. Desktop Notifications
+- Task Complete - when Claude finishes work
+- Question - when Claude needs permission
+- Plan Ready - when plan is ready for review
+- Session Limit - when limit reached
 
-| Phase | Description | Files Created |
-|-------|-------------|---------------|
-| Phase 1 | Core Infrastructure | jsonl.rs, analyzer.rs, state.rs, dedup.rs, platform.rs |
-| Phase 2 | Desktop Notifications | notifier.rs, summary.rs |
-| Phase 3 | Sound Playback | audio.rs |
-| Phase 4 | Webhooks | webhook.rs |
-| Phase 5 | Plugin Integration | hooks.example.json, config.example.json |
+### 3. Sound & Alerts
+- Normal notifications: Windows "Asterisk" sound
+- Blocked commands: Windows "Hand" sound (urgent alert)
+- Alert notification popup: "BLOCKED - Command denied by security policy"
+- Configurable volume
+
+### 4. Webhooks (Optional)
+- Slack, Discord, Telegram, Custom JSON
+- Retry with exponential backoff
+- Circuit breaker and rate limiting
 
 ---
 
-## Current Configuration
+## Configuration
 
-### ~/.claude/settings.json
-
-All 4 hook types are now registered:
+### Feature Toggles
 
 ```json
 {
-  "hooks": {
-    "PreToolUse": [...],  // Permission decisions
-    "Stop": [...],         // Task completion notifications
-    "SubagentStop": [...], // Subagent completion
-    "Notification": [...]  // Permission prompt notifications
-  },
-  "enabledPlugins": {
-    "claude-notifications-go@claude-notifications-go": false  // DISABLED
+  "features": {
+    "permission_checking": true,
+    "notifications": true
   }
 }
 ```
 
-### ~/.claude-permission-hook/config.json
+Set to `false` to disable either feature independently.
 
-Notifications enabled:
+### Auto-Approve Tools
+
+```json
+{
+  "auto_approve": {
+    "tools": [
+      "Read", "Glob", "Grep", "WebFetch", "WebSearch",
+      "Task", "TaskList", "TaskGet", "TaskCreate", "TaskUpdate",
+      "Edit", "Write"
+    ]
+  }
+}
+```
+
+### Auto-Approve Bash Patterns
+
+```json
+{
+  "auto_approve": {
+    "bash_patterns": [
+      "^(cd\\s+[^&]+&&\\s*)?git\\s+(status|log|diff|branch|show|remote|fetch)",
+      "^(cmd\\s+/c\\s+)?cargo\\s+(build|test|check|clippy|fmt|run)",
+      "^curl\\s",
+      "^wget\\s",
+      "^ls(\\s|$)",
+      "^pwd$",
+      "^npm\\s+(list|ls|outdated|view|info|search)",
+      "^docker\\s+(ps|images|inspect|logs)",
+      "^gh\\s+(repo|pr|issue|release|run|workflow)\\s+(view|list|status|diff|checks)"
+    ]
+  }
+}
+```
+
+### Inline Script Scanning
+
+Scripts are auto-approved unless they contain dangerous patterns:
+
+| Script Type | Dangerous Patterns |
+|-------------|-------------------|
+| Python | `os.remove`, `shutil.rmtree`, `subprocess` |
+| Node | `child_process`, `fs.unlink`, `rimraf` |
+| PowerShell | `Remove-Item`, `Format-Volume`, `Stop-Process` |
+| CMD | `del`, `rd`, `rmdir`, `erase`, `format`, `diskpart` |
+
+### Auto-Deny Patterns
+
+```json
+{
+  "auto_deny": {
+    "bash_patterns": [
+      "rm\\s+(-rf?|--recursive)?\\s*[/~]",
+      "git\\s+push.*--force",
+      "git\\s+reset\\s+--hard",
+      "curl.*\\|\\s*(ba)?sh"
+    ],
+    "protected_paths": [
+      "^/etc/", "^/usr/", "^/bin/",
+      "(?i)^C:\\\\Windows",
+      "(?i)^C:\\\\Program Files"
+    ]
+  }
+}
+```
+
+---
+
+## Log Format (CSV)
+
+```
+timestamp,tool,decision,reason,details
+2026-01-24T19:22:38,Read,Y,"Tool ""Read"" is in auto-approve list",test.txt
+2026-01-24T19:22:40,Bash,N,Dangerous pattern: rm -rf,rm -rf /
+2026-01-24T19:22:45,Bash,ASK,Prompting user,python script.py
+```
+
+**Decision Codes:**
+- `Y` = allow (auto-approved) - silent
+- `N` = deny (blocked) - alert sound + notification
+- `ASK` = prompt user - normal sound on task complete
+
+---
+
+## Notification Settings
 
 ```json
 {
@@ -63,57 +150,14 @@ Notifications enabled:
       "volume": 1.0
     },
     "webhook": {
-      "enabled": false
-    }
+      "enabled": false,
+      "preset": "slack",
+      "url": ""
+    },
+    "suppress_question_after_any_notification_seconds": 12
   }
 }
 ```
-
----
-
-## Features Now Available
-
-### 1. Permission Handling (Original)
-- Auto-approve safe tools (Read, Glob, Grep, etc.)
-- Auto-deny dangerous commands (rm -rf, git push --force)
-- Inline script scanning (Python, Node, PowerShell)
-- Protected path blocking
-
-### 2. Desktop Notifications (NEW)
-- ✅ Task Complete - when Claude finishes work
-- 📋 Review Complete - when Claude finishes reviewing
-- ❓ Question - when Claude needs permission
-- 📝 Plan Ready - when plan is ready for review
-- ⚠️ Session Limit - when limit reached
-- 🔐 Auth Error - when authentication fails
-
-### 3. Sound Playback (NEW)
-- Windows system notification sound
-- Configurable volume
-- Optional custom sound files
-
-### 4. Webhooks (NEW)
-- Slack (attachments format)
-- Discord (embeds format)
-- Telegram (HTML format)
-- Custom JSON format
-- Retry with exponential backoff
-- Circuit breaker (5 failures = 30s pause)
-- Rate limiting (10 req/min)
-
----
-
-## After Restart
-
-1. **Desktop notifications** will appear when Claude:
-   - Completes a task
-   - Has a plan ready for review
-   - Asks for permission
-   - Reaches session limit
-
-2. **System sound** will play with each notification
-
-3. **`claude-notifications-go`** is disabled - can be uninstalled
 
 ---
 
@@ -123,110 +167,65 @@ Notifications enabled:
 C:\dev\plugin\
 ├── Cargo.toml
 ├── README.md
-├── PLAN.md              # 5-phase implementation plan
 ├── HANDOVER.md          # This file
-├── hooks.example.json   # Example hook configuration
-├── config.example.json  # Example full config
 ├── src/
 │   ├── main.rs          # Entry point, hook routing
-│   ├── lib.rs           # Module declarations
 │   ├── config.rs        # Configuration loading
-│   ├── permission.rs    # Permission logic
-│   ├── analyzer.rs      # Status detection state machine
-│   ├── jsonl.rs         # Transcript parser
-│   ├── state.rs         # Session state manager
-│   ├── dedup.rs         # Deduplication with locks
+│   ├── permission.rs    # Permission logic + inline script scanning
+│   ├── logging.rs       # CSV logging
+│   ├── analyzer.rs      # Status detection
 │   ├── notifier.rs      # Desktop notifications
-│   ├── summary.rs       # Message generation
 │   ├── audio.rs         # Sound playback
 │   ├── webhook.rs       # HTTP webhooks
-│   ├── logging.rs       # Logging utilities
-│   └── platform.rs      # Cross-platform helpers
-└── target/
-    └── release/
-        └── claude-permission-hook.exe
+│   └── ...
+└── target/release/
+    └── claude-permission-hook.exe
 ```
 
 ---
 
-## Webhook Configuration (Optional)
+## Claude Hook Registration
 
-To enable webhooks, update config:
+In `~/.claude/settings.json`:
 
 ```json
 {
-  "notifications": {
-    "webhook": {
-      "enabled": true,
-      "preset": "slack",
-      "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-    }
+  "hooks": {
+    "PreToolUse": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "path\\to\\claude-permission-hook.exe" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "path\\to\\claude-permission-hook.exe" }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "path\\to\\claude-permission-hook.exe" }] }],
+    "Notification": [{ "matcher": "permission_prompt", "hooks": [{ "type": "command", "command": "path\\to\\claude-permission-hook.exe" }] }]
   }
 }
 ```
 
-For Telegram:
-```json
-{
-  "webhook": {
-    "enabled": true,
-    "preset": "telegram",
-    "url": "https://api.telegram.org/botYOUR_BOT_TOKEN/sendMessage",
-    "telegram_chat_id": "YOUR_CHAT_ID"
-  }
-}
+---
+
+## Build & Deploy
+
+```bash
+# Build
+cargo build --release
+
+# Deploy
+copy target\release\claude-permission-hook.exe %USERPROFILE%\.local\bin\
 ```
 
 ---
 
 ## Troubleshooting
 
-### No notifications appearing
-1. Check `notifications.desktop.enabled: true` in config
-2. Check verbose logging: `"logging": { "verbose": true }`
-3. View log: `type %USERPROFILE%\.claude-permission-hook\decisions.log`
+### No notifications
+1. Check `features.notifications: true`
+2. Check `notifications.desktop.enabled: true`
+3. Enable verbose logging: `"logging": { "verbose": true }`
 
-### Still seeing claude-notifications-go
-1. Verify `enabledPlugins` has it set to `false`
-2. Restart Claude Code
+### Commands not auto-approved
+1. Check if tool is in `auto_approve.tools`
+2. Check if bash pattern matches `auto_approve.bash_patterns`
+3. Check log file for decision reason
 
-### Duplicate notifications
-- Built-in deduplication prevents this
-- Check `suppress_question_after_any_notification_seconds` setting
-
----
-
-## Git Commits (This Session)
-
-```
-02d16b9 - Phase 1: Core infrastructure for notification merge
-cfe8c1d - Phase 2: Desktop notifications with notify-rust
-ce357cd - Phase 3: Sound playback with system sounds
-72a731a - Phase 4: Webhook notifications with retry and circuit breaker
-47d01b4 - Phase 5: Plugin integration and example configurations
-```
-
----
-
-## Uninstall claude-notifications-go
-
-After verifying notifications work:
-
-1. The plugin is already disabled in settings
-2. Can uninstall via Claude Code plugins menu if desired
-3. Or delete: `%USERPROFILE%\.claude\plugins\claude-notifications-go\`
-
----
-
-## Build Commands
-
+### View recent decisions
 ```bash
-# Run tests
-cargo test
-
-# Build release
-cargo build --release
-
-# Deploy
-copy target\release\claude-permission-hook.exe %USERPROFILE%\.local\bin\
+type %USERPROFILE%\.claude-permission-hook\decisions.log
 ```
