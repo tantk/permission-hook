@@ -1,47 +1,124 @@
 {
+  "features": {
+    "permission_checking": true,
+    "notifications": true
+  },
   "auto_approve": {
-    "tools": ["Read", "Glob", "Grep", "Task", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "WebSearch", "WebFetch"],
+    "tools": [
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Task",
+      "TaskList",
+      "TaskGet",
+      "TaskCreate",
+      "TaskUpdate",
+      "Edit",
+      "Write"
+    ],
     "bash_patterns": [
-      "^git\\s+(status|log|diff|branch|show|remote|fetch).*",
-      "^ls\\b.*",
+      "^type\\s+",
+      "^findstr\\s+",
+      "^mkdir\\s+",
+      "^where\\s+",
+      "^dir\\s+",
+      "^dir$",
+      "^java\\s+(-version|--version)",
+      "^javac\\s+(-version|--version)",
+      "^git\\s+(-C\\s+\\S+\\s+)?(status|log|diff|branch|show|remote|fetch|add|stash|tag|push|pull|commit|init|config)",
+      "^(cd\\s+[^&]+&&\\s*)?git\\s+(status|log|diff|branch|show|remote|fetch|add|stash|tag|push|pull|commit|init|config)",
+      "^(cmd\\s+/c\\s+)?cargo\\s+(build|test|check|clippy|fmt|run)",
+      "^curl\\s",
+      "^wget\\s",
+      "^ls(\\s|$)",
       "^pwd$",
-      "^cat\\b.*",
-      "^head\\b.*",
-      "^tail\\b.*",
-      "^echo\\b.*",
-      "^which\\b.*",
-      "^whoami$",
-      "^hostname$",
-      "^date$",
-      "^uname\\b.*",
-      "^env$",
-      "^cargo\\s+(build|test|check|clippy|fmt|doc|run).*",
-      "^npm\\s+(install|ci|run|test).*",
-      "^gh\\s+(pr|issue|repo|auth|api).*"
+      "^echo\\s",
+      "^cat\\s",
+      "^head\\s",
+      "^tail\\s",
+      "^npm\\s+(list|ls|outdated|view|info|search)",
+      "^node\\s+--version",
+      "^python3?\\s+--version",
+      "^pip3?\\s+(list|show|search)",
+      "^docker\\s+(ps|images|inspect|logs)",
+      "^gh\\s+(repo|pr|issue|release|run|workflow)\\s+(view|list|status|diff|checks)",
+      "^gh\\s+api\\s",
+      "^gh\\s+auth\\s+status",
+      "^(whoami|hostname|date|uname|env)$"
     ]
   },
   "auto_deny": {
     "bash_patterns": [
-      "^rm\\s+-rf\\s+[/~]",
-      "^sudo\\b.*",
-      "^chmod\\s+777\\b.*",
-      "^curl.*\\|.*sh",
-      "^wget.*\\|.*sh"
+      "rm\\s+(-rf?|--recursive)?\\s*[/~]",
+      "rm\\s+-rf?\\s+\\*",
+      "git\\s+push.*--force",
+      "git\\s+reset\\s+--hard",
+      "curl.*\\|\\s*(ba)?sh",
+      "wget.*\\|\\s*(ba)?sh",
+      "sudo\\s+rm",
+      "npm\\s+publish",
+      "yarn\\s+publish"
     ],
     "protected_paths": [
       "^/etc/",
       "^/usr/",
-      "^/var/",
-      "^~/.ssh/",
-      "^~/.gnupg/",
-      "\\.env$"
+      "^/bin/",
+      "(?i)^C:\\\\Windows",
+      "(?i)^C:\\\\Program Files"
     ]
   },
   "inline_scripts": {
     "enabled": true,
-    "dangerous_python_patterns": ["exec\\(", "eval\\(", "os\\.system\\(", "subprocess\\.call\\("],
-    "dangerous_node_patterns": ["child_process", "eval\\("],
-    "dangerous_powershell_patterns": ["Invoke-Expression", "iex\\s"]
+    "dangerous_python_patterns": [
+      "os\\.remove",
+      "os\\.unlink",
+      "os\\.rmdir",
+      "os\\.system",
+      "shutil\\.rmtree",
+      "subprocess"
+    ],
+    "dangerous_node_patterns": [
+      "child_process",
+      "fs\\.unlink",
+      "fs\\.rmdir",
+      "fs\\.rm\\(",
+      "rimraf"
+    ],
+    "dangerous_powershell_patterns": [
+      "(?i)Remove-Item",
+      "(?i)rm\\s+-r",
+      "(?i)del\\s+-r",
+      "(?i)Stop-Process",
+      "(?i)Kill",
+      "(?i)Format-Volume",
+      "(?i)Clear-Disk",
+      "(?i)Invoke-Expression",
+      "(?i)iex\\s",
+      "(?i)Set-ExecutionPolicy",
+      "(?i)Stop-Service"
+    ],
+    "dangerous_cmd_patterns": [
+      "(?i)\\bdel\\b",
+      "(?i)\\brd\\b",
+      "(?i)\\brmdir\\b",
+      "(?i)\\berase\\b",
+      "(?i)\\bformat\\b",
+      "(?i)\\bdiskpart\\b"
+    ]
+  },
+  "ambiguous": {
+    "mode": "ask",
+    "llm": {
+      "model": "openai/gpt-4o-mini",
+      "api_key": "",
+      "base_url": "https://openrouter.ai/api/v1"
+    }
+  },
+  "logging": {
+    "enabled": true,
+    "verbose": true
   },
   "notifications": {
     "desktop": {
@@ -51,27 +128,14 @@
     },
     "webhook": {
       "enabled": false,
-      "preset": "slack",
-      "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+      "preset": "custom",
+      "url": "",
       "telegram_chat_id": "",
       "retry_enabled": true,
       "retry_max_attempts": 3
     },
     "suppress_question_after_task_complete_seconds": 12,
     "suppress_question_after_any_notification_seconds": 12,
-    "notify_on_subagent_stop": false,
-    "notify_on_text_response": true
-  },
-  "ambiguous": {
-    "mode": "prompt",
-    "llm": {
-      "api_key": "",
-      "base_url": "https://openrouter.ai/api/v1",
-      "model": "openai/gpt-4o-mini"
-    }
-  },
-  "logging": {
-    "enabled": true,
-    "verbose": false
+    "notify_on_subagent_stop": false
   }
 }
