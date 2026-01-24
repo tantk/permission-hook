@@ -99,7 +99,22 @@ pub struct InlineScript {
     pub content: String,
 }
 
+/// Strip common prefixes like "cd path &&" from commands
+fn strip_cd_prefix(command: &str) -> &str {
+    // Match: cd <path> && <rest>
+    if let Some(pos) = command.find("&&") {
+        let prefix = &command[..pos];
+        if prefix.trim().starts_with("cd ") {
+            return command[pos + 2..].trim();
+        }
+    }
+    command
+}
+
 pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
+    // Strip common prefixes like "cd path &&" before parsing
+    let command = strip_cd_prefix(command);
+
     // Python: python -c "..." or python3 -c "..." (handles multi-line)
     let python_re = Regex::new(r#"(?s)^python3?\s+-c\s+["'](.*)["']"#).ok()?;
     if let Some(caps) = python_re.captures(command) {
