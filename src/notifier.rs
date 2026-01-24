@@ -78,12 +78,17 @@ pub fn send_alert_notification(
     }
 }
 
-/// Truncate detail string for display
+/// Truncate detail string for display (UTF-8 safe)
 fn truncate_detail(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len])
+        // Find a valid UTF-8 char boundary at or before max_len
+        let mut end = max_len;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &s[..end])
     }
 }
 

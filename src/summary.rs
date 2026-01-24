@@ -129,16 +129,26 @@ pub fn clean_markdown(text: &str) -> String {
     result.trim().to_string()
 }
 
-/// Truncate text smartly at word boundaries
+/// Truncate text smartly at word boundaries (UTF-8 safe)
 pub fn truncate_smart(text: &str, max_len: usize) -> String {
     if text.len() <= max_len {
         return text.to_string();
     }
 
-    // Find last space before max_len
-    let truncated = &text[..max_len];
+    // Find a valid UTF-8 char boundary at or before max_len
+    let mut end = max_len;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    if end == 0 {
+        return "...".to_string();
+    }
+
+    // Find last space before the boundary
+    let truncated = &text[..end];
     if let Some(last_space) = truncated.rfind(' ') {
-        if last_space > max_len / 2 {
+        if last_space > end / 2 {
             return format!("{}...", &text[..last_space]);
         }
     }
