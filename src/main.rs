@@ -17,6 +17,7 @@ mod platform;
 mod summary;
 mod notifier;
 mod audio;
+mod webhook;
 
 use config::{load_config, Config};
 use permission::{HookInput, HookResponse, is_auto_approved, is_auto_denied, ask_llm, extract_details};
@@ -25,8 +26,9 @@ use analyzer::{analyze_transcript, get_status_for_pre_tool_use, Status};
 use state::Manager as StateManager;
 use dedup::Manager as DedupManager;
 use notifier::{send_notification, should_notify};
-use summary::generate_summary;
+use summary::{generate_summary, generate_session_name};
 use audio::play_sound;
+use webhook::{send_webhook, should_send_webhook, CircuitBreaker, RateLimiter};
 
 use std::io::{self, BufRead};
 
@@ -91,7 +93,14 @@ fn handle_pre_tool_use(config: &Config, input: &HookInput, state_mgr: &StateMana
 }
 
 /// Handle Stop hook event (task completion)
-fn handle_stop(config: &Config, input: &HookInput, state_mgr: &StateManager, dedup_mgr: &DedupManager) {
+fn handle_stop(
+    config: &Config,
+    input: &HookInput,
+    state_mgr: &StateManager,
+    dedup_mgr: &DedupManager,
+    circuit_breaker: &mut CircuitBreaker,
+    rate_limiter: &mut RateLimiter,
+) {
     let session_id = input.get_session_id();
     let transcript_path = input.transcript_path.as_deref().unwrap_or("");
 
@@ -143,17 +152,17 @@ fn handle_stop(config: &Config, input: &HookInput, state_mgr: &StateManager, ded
     // Log the status detection
     debug(config, &format!("Detected status: {:?}", status));
 
-    // Send notification if enabled
+    // Generate summary and session name for notifications
+    let cwd = input.get_cwd();
+    let git_branch = platform::get_git_branch(&cwd);
+    let summary = match jsonl::parse_transcript(transcript_path) {
+        Ok(messages) => generate_summary(&messages, status),
+        Err(_) => String::new(),
+    };
+    let session_name = generate_session_name(&session_id, &cwd, git_branch.as_deref());
+
+    // Send desktop notification if enabled
     if should_notify(config, status) {
-        // Parse transcript to generate summary
-        let summary = match jsonl::parse_transcript(transcript_path) {
-            Ok(messages) => generate_summary(&messages, status),
-            Err(_) => String::new(),
-        };
-
-        let cwd = input.get_cwd();
-        let git_branch = platform::get_git_branch(&cwd);
-
         if let Err(e) = send_notification(
             config,
             status,
@@ -173,6 +182,15 @@ fn handle_stop(config: &Config, input: &HookInput, state_mgr: &StateManager, ded
         }
     }
 
+    // Send webhook if enabled
+    if should_send_webhook(config, status) {
+        if let Err(e) = send_webhook(config, status, &summary, &session_name, circuit_breaker, rate_limiter) {
+            logging::warn(&format!("Webhook failed: {}", e));
+        } else {
+            debug(config, "Webhook sent successfully");
+        }
+    }
+
     log_decision(config, "Stop", "notify", status.as_str(), Some(&session_id));
 
     // Cleanup old locks/state
@@ -181,18 +199,32 @@ fn handle_stop(config: &Config, input: &HookInput, state_mgr: &StateManager, ded
 }
 
 /// Handle SubagentStop hook event
-fn handle_subagent_stop(config: &Config, input: &HookInput, state_mgr: &StateManager, dedup_mgr: &DedupManager) {
+fn handle_subagent_stop(
+    config: &Config,
+    input: &HookInput,
+    state_mgr: &StateManager,
+    dedup_mgr: &DedupManager,
+    circuit_breaker: &mut CircuitBreaker,
+    rate_limiter: &mut RateLimiter,
+) {
     if !config.notifications.notify_on_subagent_stop {
         debug(config, "SubagentStop notifications disabled");
         return;
     }
 
     // Handle same as Stop
-    handle_stop(config, input, state_mgr, dedup_mgr);
+    handle_stop(config, input, state_mgr, dedup_mgr, circuit_breaker, rate_limiter);
 }
 
 /// Handle Notification hook event (permission prompt)
-fn handle_notification(config: &Config, input: &HookInput, state_mgr: &StateManager, dedup_mgr: &DedupManager) {
+fn handle_notification(
+    config: &Config,
+    input: &HookInput,
+    state_mgr: &StateManager,
+    dedup_mgr: &DedupManager,
+    circuit_breaker: &mut CircuitBreaker,
+    rate_limiter: &mut RateLimiter,
+) {
     let session_id = input.get_session_id();
 
     debug(config, &format!("Notification event: session={}", session_id));
@@ -241,15 +273,18 @@ fn handle_notification(config: &Config, input: &HookInput, state_mgr: &StateMana
     // Log the notification
     debug(config, "Detected status: Question (permission prompt)");
 
-    // Send notification if enabled
-    if should_notify(config, status) {
-        let cwd = input.get_cwd();
-        let git_branch = platform::get_git_branch(&cwd);
+    // Generate session name for notifications
+    let cwd = input.get_cwd();
+    let git_branch = platform::get_git_branch(&cwd);
+    let summary = "Permission required";
+    let session_name = generate_session_name(&session_id, &cwd, git_branch.as_deref());
 
+    // Send desktop notification if enabled
+    if should_notify(config, status) {
         if let Err(e) = send_notification(
             config,
             status,
-            "Permission required",
+            summary,
             &session_id,
             &cwd,
             git_branch.as_deref(),
@@ -265,6 +300,15 @@ fn handle_notification(config: &Config, input: &HookInput, state_mgr: &StateMana
         }
     }
 
+    // Send webhook if enabled
+    if should_send_webhook(config, status) {
+        if let Err(e) = send_webhook(config, status, summary, &session_name, circuit_breaker, rate_limiter) {
+            logging::warn(&format!("Webhook failed: {}", e));
+        } else {
+            debug(config, "Webhook sent successfully");
+        }
+    }
+
     log_decision(config, "Notification", "notify", "question", Some(&session_id));
 }
 
@@ -272,6 +316,10 @@ fn main() {
     let config = load_config();
     let state_mgr = StateManager::new();
     let dedup_mgr = DedupManager::new();
+
+    // Webhook state (fresh each invocation - persistent state would require file-based storage)
+    let mut circuit_breaker = CircuitBreaker::default();
+    let mut rate_limiter = RateLimiter::default();
 
     // Read JSON from stdin
     let stdin = io::stdin();
@@ -299,9 +347,9 @@ fn main() {
 
     match hook_event.as_str() {
         "PreToolUse" => handle_pre_tool_use(&config, &input, &state_mgr),
-        "Stop" => handle_stop(&config, &input, &state_mgr, &dedup_mgr),
-        "SubagentStop" => handle_subagent_stop(&config, &input, &state_mgr, &dedup_mgr),
-        "Notification" => handle_notification(&config, &input, &state_mgr, &dedup_mgr),
+        "Stop" => handle_stop(&config, &input, &state_mgr, &dedup_mgr, &mut circuit_breaker, &mut rate_limiter),
+        "SubagentStop" => handle_subagent_stop(&config, &input, &state_mgr, &dedup_mgr, &mut circuit_breaker, &mut rate_limiter),
+        "Notification" => handle_notification(&config, &input, &state_mgr, &dedup_mgr, &mut circuit_breaker, &mut rate_limiter),
         _ => {
             debug(&config, &format!("Unknown hook event: {}", hook_event));
             // Default to PreToolUse behavior

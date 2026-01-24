@@ -92,6 +92,8 @@ impl Default for LoggingConfig {
 pub struct NotificationsConfig {
     #[serde(default)]
     pub desktop: DesktopNotificationsConfig,
+    #[serde(default)]
+    pub webhook: WebhookConfig,
     #[serde(default = "default_cooldown")]
     pub suppress_question_after_task_complete_seconds: i64,
     #[serde(default = "default_cooldown")]
@@ -112,9 +114,27 @@ pub struct DesktopNotificationsConfig {
     pub volume: f32,
 }
 
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct WebhookConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default = "default_webhook_preset")]
+    pub preset: String,
+    #[serde(default)]
+    pub telegram_chat_id: Option<String>,
+    #[serde(default = "default_true")]
+    pub retry_enabled: bool,
+    #[serde(default = "default_retry_attempts")]
+    pub retry_max_attempts: u32,
+}
+
 fn default_true() -> bool { true }
 fn default_cooldown() -> i64 { 12 }
 fn default_volume() -> f32 { 1.0 }
+fn default_webhook_preset() -> String { "custom".to_string() }
+fn default_retry_attempts() -> u32 { 3 }
 
 // ============================================================================
 // Path Helpers
