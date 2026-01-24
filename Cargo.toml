@@ -13,6 +13,9 @@ chrono = "0.4"
 dirs = "5.0"
 reqwest = { version = "0.11", features = ["blocking", "json"] }  # For LLM API calls
 
+[dev-dependencies]
+tempfile = "3.10"
+
 [profile.release]
 opt-level = 3
 lto = true

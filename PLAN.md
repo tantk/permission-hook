@@ -25,23 +25,23 @@ Combine permission handling and smart notifications into a single Rust binary, a
 
 ---
 
-## Phase 1: Core Infrastructure
+## Phase 1: Core Infrastructure ✅ COMPLETE
 
 **Goal**: Add hook event handling and status detection without notifications yet.
 
 ### Tasks
 
-- [ ] **1.1** Add new hook event types to input parsing
+- [x] **1.1** Add new hook event types to input parsing
   - `Stop` - session/task stopped
   - `SubagentStop` - subagent completed
   - `Notification` - permission_prompt event
 
-- [ ] **1.2** Implement JSONL transcript parser (`jsonl.rs`)
+- [x] **1.2** Implement JSONL transcript parser (`jsonl.rs`)
   - Parse Claude Code transcript files
   - Extract messages, tools, text content
   - Get last N assistant messages
 
-- [ ] **1.3** Implement status analyzer (`analyzer.rs`)
+- [x] **1.3** Implement status analyzer (`analyzer.rs`)
   - State machine for 6 statuses:
     - `task_complete` - active tools used
     - `review_complete` - read-only tools with long analysis
@@ -51,22 +51,24 @@ Combine permission handling and smart notifications into a single Rust binary, a
     - `api_error` - 401 error with login prompt
   - Tool categorization (active vs passive vs read-like)
 
-- [ ] **1.4** Implement session state manager (`state.rs`)
+- [x] **1.4** Implement session state manager (`state.rs`)
   - Per-session JSON state files in temp directory
   - Track last interactive tool, timestamps
   - Cooldown management
 
-- [ ] **1.5** Implement deduplication manager (`dedup.rs`)
+- [x] **1.5** Implement deduplication manager (`dedup.rs`)
   - Two-phase locking (early check + atomic acquisition)
   - Content-based deduplication
   - Lock file management with TTL
 
 ### Testing Phase 1
-- [ ] Unit tests for JSONL parsing
-- [ ] Unit tests for status analyzer (all 6 statuses)
-- [ ] Unit tests for state manager (save/load/cooldown)
-- [ ] Unit tests for dedup (concurrent lock acquisition)
-- [ ] Integration test: hook event routing
+- [x] Unit tests for JSONL parsing (5 tests)
+- [x] Unit tests for status analyzer (15 tests)
+- [x] Unit tests for state manager (8 tests)
+- [x] Unit tests for dedup (6 tests)
+- [x] Integration test: hook event routing (4 tests in main.rs)
+
+**Total: 96 tests passing**
 
 ### Deliverable
 Hook correctly detects status from transcripts, manages state, prevents duplicates.
@@ -356,7 +358,7 @@ The config file will be backward compatible - existing permission settings prese
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| Phase 1 | Core Infrastructure | Not Started |
+| Phase 1 | Core Infrastructure | ✅ Complete |
 | Phase 2 | Desktop Notifications | Not Started |
 | Phase 3 | Sound Playback | Not Started |
 | Phase 4 | Webhooks | Not Started |
