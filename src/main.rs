@@ -646,7 +646,9 @@ fn main() {
         if config.logging.verbose {
             eprintln!("[permission-hook] ALLOW: {} - {}", tool_name, reason);
         }
-        // Exit 0 = allow (Claude Code docs recommend exit codes)
+        // Output JSON to actually allow the command
+        let response = HookResponse::allow(&reason);
+        println!("{}", serde_json::to_string(&response).unwrap());
         std::process::exit(0);
     }
 
