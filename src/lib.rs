@@ -9,3 +9,4 @@ pub mod dedup;
 pub mod platform;
 pub mod summary;
 pub mod notifier;
+pub mod audio;

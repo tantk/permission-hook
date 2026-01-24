@@ -16,6 +16,7 @@ mod dedup;
 mod platform;
 mod summary;
 mod notifier;
+mod audio;
 
 use config::{load_config, Config};
 use permission::{HookInput, HookResponse, is_auto_approved, is_auto_denied, ask_llm, extract_details};
@@ -25,6 +26,7 @@ use state::Manager as StateManager;
 use dedup::Manager as DedupManager;
 use notifier::{send_notification, should_notify};
 use summary::generate_summary;
+use audio::play_sound;
 
 use std::io::{self, BufRead};
 
@@ -163,6 +165,11 @@ fn handle_stop(config: &Config, input: &HookInput, state_mgr: &StateManager, ded
             logging::warn(&format!("Failed to send notification: {}", e));
         } else {
             debug(config, &format!("Notification sent: {} - {}", status.as_str(), summary));
+
+            // Play notification sound
+            if let Err(e) = play_sound(config, status) {
+                debug(config, &format!("Sound playback failed: {}", e));
+            }
         }
     }
 
@@ -250,6 +257,11 @@ fn handle_notification(config: &Config, input: &HookInput, state_mgr: &StateMana
             logging::warn(&format!("Failed to send notification: {}", e));
         } else {
             debug(config, "Notification sent: question - Permission required");
+
+            // Play notification sound
+            if let Err(e) = play_sound(config, status) {
+                debug(config, &format!("Sound playback failed: {}", e));
+            }
         }
     }
 

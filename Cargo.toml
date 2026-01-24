@@ -13,6 +13,11 @@ chrono = "0.4"
 dirs = "5.0"
 reqwest = { version = "0.11", features = ["blocking", "json"] }  # For LLM API calls
 notify-rust = "4"  # Desktop notifications
+rodio = { version = "0.19", optional = true }  # Audio playback (optional)
+
+[features]
+default = []
+sound = ["rodio"]
 
 [dev-dependencies]
 tempfile = "3.10"
