@@ -172,6 +172,10 @@ fn default_config() -> Config {
                 r"^python3?\s+--version".into(),
                 r"^pip3?\s+(list|show|search)".into(),
                 r"^docker\s+(ps|images|inspect|logs)".into(),
+                r"^gh\s+(repo|pr|issue|release|run|workflow)\s+(view|list|status|diff|checks)".into(),
+                r"^gh\s+api\s".into(),
+                r"^gh\s+auth\s+status".into(),
+                r"^(whoami|hostname|date|uname|env)$".into(),
             ],
         },
         auto_deny: AutoDenyConfig {
@@ -264,6 +268,10 @@ fn get_log_path() -> PathBuf {
     get_config_dir().join("decisions.log")
 }
 
+fn get_prompts_path() -> PathBuf {
+    get_config_dir().join("recent_prompts.log")
+}
+
 // ============================================================================
 // Config Loading
 // ============================================================================
@@ -290,6 +298,30 @@ fn truncate(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &s[..max_len])
     }
+}
+
+fn log_prompt(tool: &str, details: Option<&str>) {
+    let prompts_path = get_prompts_path();
+    let log_dir = get_config_dir();
+    let _ = fs::create_dir_all(&log_dir);
+
+    // Read existing prompts, keep only last 50 lines
+    let existing: Vec<String> = fs::read_to_string(&prompts_path)
+        .unwrap_or_default()
+        .lines()
+        .map(String::from)
+        .collect();
+
+    let skip_count = if existing.len() > 50 { existing.len() - 50 } else { 0 };
+    let mut lines: Vec<String> = existing.into_iter().skip(skip_count).collect();
+
+    // Add new prompt
+    let timestamp = Utc::now().format("%H:%M:%S").to_string();
+    let detail_str = details.unwrap_or("-");
+    lines.push(format!("{} | {} | {}", timestamp, tool, detail_str));
+
+    // Write back
+    let _ = fs::write(&prompts_path, lines.join("\n") + "\n");
 }
 
 fn log_decision(config: &Config, tool: &str, decision: &str, reason: &str, details: Option<&str>) {
@@ -611,6 +643,9 @@ fn main() {
     // Tier 1: Check auto-approve
     if let Some(reason) = is_auto_approved(&config, &tool_name, &tool_input) {
         log_decision(&config, &tool_name, "allow", &reason, details);
+        if config.logging.verbose {
+            eprintln!("[permission-hook] ALLOW: {} - {}", tool_name, reason);
+        }
         // Exit 0 = allow (Claude Code docs recommend exit codes)
         std::process::exit(0);
     }
@@ -619,7 +654,7 @@ fn main() {
     if let Some(reason) = is_auto_denied(&config, &tool_name, &tool_input) {
         log_decision(&config, &tool_name, "deny", &reason, details);
         // Exit 2 = blocking error (blocks the tool call)
-        eprintln!("{}", reason);
+        eprintln!("[permission-hook] DENY: {} - {}", tool_name, reason);
         std::process::exit(2);
     }
 
@@ -635,7 +670,14 @@ fn main() {
     }
 
     // Fall through to Claude's default behavior (prompt user)
-    log_decision(&config, &tool_name, "prompt", "Ambiguous operation - prompting user", details);
+    let prompt_reason = format!("Prompting user for: {} ({})", tool_name, details.unwrap_or("no details"));
+    log_decision(&config, &tool_name, "prompt", &prompt_reason, details);
+
+    // Log to separate prompts file for easy checking
+    log_prompt(&tool_name, details);
+
+    // Print to stderr so Claude can see that a prompt occurred
+    eprintln!("[permission-hook] {}", prompt_reason);
     // Exit 0 with no output = passthrough to Claude's native permissions
     std::process::exit(0);
 }
