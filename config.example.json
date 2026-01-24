@@ -1,0 +1,77 @@
+{
+  "auto_approve": {
+    "tools": ["Read", "Glob", "Grep", "Task", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "WebSearch", "WebFetch"],
+    "bash_patterns": [
+      "^git\\s+(status|log|diff|branch|show|remote|fetch).*",
+      "^ls\\b.*",
+      "^pwd$",
+      "^cat\\b.*",
+      "^head\\b.*",
+      "^tail\\b.*",
+      "^echo\\b.*",
+      "^which\\b.*",
+      "^whoami$",
+      "^hostname$",
+      "^date$",
+      "^uname\\b.*",
+      "^env$",
+      "^cargo\\s+(build|test|check|clippy|fmt|doc|run).*",
+      "^npm\\s+(install|ci|run|test).*",
+      "^gh\\s+(pr|issue|repo|auth|api).*"
+    ]
+  },
+  "auto_deny": {
+    "bash_patterns": [
+      "^rm\\s+-rf\\s+[/~]",
+      "^sudo\\b.*",
+      "^chmod\\s+777\\b.*",
+      "^curl.*\\|.*sh",
+      "^wget.*\\|.*sh"
+    ],
+    "protected_paths": [
+      "^/etc/",
+      "^/usr/",
+      "^/var/",
+      "^~/.ssh/",
+      "^~/.gnupg/",
+      "\\.env$"
+    ]
+  },
+  "inline_scripts": {
+    "enabled": true,
+    "dangerous_python_patterns": ["exec\\(", "eval\\(", "os\\.system\\(", "subprocess\\.call\\("],
+    "dangerous_node_patterns": ["child_process", "eval\\("],
+    "dangerous_powershell_patterns": ["Invoke-Expression", "iex\\s"]
+  },
+  "notifications": {
+    "desktop": {
+      "enabled": true,
+      "sound": true,
+      "volume": 1.0
+    },
+    "webhook": {
+      "enabled": false,
+      "preset": "slack",
+      "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+      "telegram_chat_id": "",
+      "retry_enabled": true,
+      "retry_max_attempts": 3
+    },
+    "suppress_question_after_task_complete_seconds": 12,
+    "suppress_question_after_any_notification_seconds": 12,
+    "notify_on_subagent_stop": false,
+    "notify_on_text_response": true
+  },
+  "ambiguous": {
+    "mode": "prompt",
+    "llm": {
+      "api_key": "",
+      "base_url": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-4o-mini"
+    }
+  },
+  "logging": {
+    "enabled": true,
+    "verbose": false
+  }
+}
