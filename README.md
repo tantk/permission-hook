@@ -4,19 +4,6 @@ A fast, open-source auto-permission handler for Claude Code and other AI coding 
 
 **Written in Rust for minimal overhead (~1-5ms per call).**
 
-## Inspiration
-
-This project is inspired by and builds upon ideas from:
-
-- **claudefast** by Jason McGhee - The original fast permission hook concept
-- **[claude-code-permissions-hook](https://github.com/kornysietsma/claude-code-permissions-hook)** by Korny Sietsma - TOML-based permission system with audit logging
-
-We've combined the best ideas from both projects and added:
-- Inline script scanning (Python, Node.js, PowerShell)
-- Built-in dangerous pattern detection
-- MCP tool heuristics
-- Optional LLM fallback for ambiguous cases
-
 ## What It Does
 
 Intercepts permission prompts and automatically:
@@ -33,23 +20,15 @@ Intercepts permission prompts and automatically:
 
 ## Installation
 
-### Option 1: Download Pre-built Binary
-
-Download from [Releases](../../releases):
-- `claude-permission-hook-windows.exe`
-- `claude-permission-hook-linux`
-- `claude-permission-hook-macos`
-- `claude-permission-hook-macos-arm64`
-
-### Option 2: Build from Source
+### Build from Source
 
 ```bash
 # Install Rust (if needed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Clone and build
-git clone https://github.com/YOUR_USERNAME/claude-permission-hook.git
-cd claude-permission-hook
+git clone https://github.com/tantk/permission-hook.git
+cd permission-hook
 cargo build --release
 
 # Binary at: target/release/claude-permission-hook
@@ -65,7 +44,12 @@ Add to `~/.claude/settings.json`:
     "PreToolUse": [
       {
         "matcher": ".*",
-        "command": "/path/to/claude-permission-hook"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/path/to/claude-permission-hook"
+          }
+        ]
       }
     ]
   }
@@ -108,7 +92,7 @@ Add to `~/.claude/settings.json`:
 ## What Gets Auto-Approved
 
 ### Tools
-`Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `TaskList`, `TaskGet`
+`Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TaskList`, `TaskGet`, `TaskCreate`, `TaskUpdate`
 
 ### Bash Commands
 - `git status/log/diff/branch/show/remote/fetch`
@@ -116,11 +100,14 @@ Add to `~/.claude/settings.json`:
 - `npm list/outdated/view`, `node --version`
 - `python --version`, `pip list`
 - `docker ps/images/logs`
+- `gh repo/pr/issue view/list/status`
+- `whoami`, `hostname`, `date`, `uname`, `env`
 
 ### Inline Scripts
-Python/Node scripts auto-approved **unless** they contain:
+Python/Node/PowerShell scripts auto-approved **unless** they contain:
 - Python: `os.remove`, `os.system`, `shutil.rmtree`, `subprocess`
 - Node: `child_process`, `fs.unlink`, `fs.rmdir`
+- PowerShell: `Remove-Item`, `Stop-Process`, `Invoke-Expression`
 
 ### MCP Tools
 Auto-approved if name contains: `get`, `list`, `read`, `fetch`, `search`, `view`
@@ -146,7 +133,7 @@ Config file: `~/.claude-permission-hook/config.json`
 ```json
 {
   "auto_approve": {
-    "tools": ["Read", "Glob", "Grep"],
+    "tools": ["Read", "Glob", "Grep", "Task"],
     "bash_patterns": ["^git\\s+(status|log|diff)", "^ls(\\s|$)"]
   },
   "auto_deny": {
@@ -156,13 +143,15 @@ Config file: `~/.claude-permission-hook/config.json`
   "inline_scripts": {
     "enabled": true,
     "dangerous_python_patterns": ["os\\.remove", "subprocess"],
-    "dangerous_node_patterns": ["child_process"]
+    "dangerous_node_patterns": ["child_process"],
+    "dangerous_powershell_patterns": ["(?i)Remove-Item", "(?i)Invoke-Expression"]
   },
   "ambiguous": {
     "mode": "ask"
   },
   "logging": {
-    "enabled": true
+    "enabled": true,
+    "verbose": false
   }
 }
 ```
@@ -178,6 +167,8 @@ All decisions logged to `~/.claude-permission-hook/decisions.log`:
 {"timestamp":"2025-01-24T10:30:48Z","tool":"Bash","decision":"deny","reason":"...","details":"rm -rf /"}
 {"timestamp":"2025-01-24T10:30:52Z","tool":"Bash","decision":"prompt","reason":"...","details":"npm test"}
 ```
+
+Recent prompts (for debugging): `~/.claude-permission-hook/recent_prompts.log`
 
 ## Optional: LLM for Tier 3
 
@@ -203,16 +194,7 @@ Cost: ~$0.0002 per decision (~$1 per 5,000 decisions)
 Works with:
 - **Claude Code** (primary target)
 - Any tool using stdin/stdout JSON hooks
-- Potentially: Codex CLI, Gemini CLI, etc.
 
 ## License
 
 MIT - Free to use, modify, and distribute.
-
-## Acknowledgments
-
-Special thanks to the projects that inspired this work:
-
-- claudefast - Jason McGhee's fast permission hook that proved Rust is the way to go
-- [claude-code-permissions-hook](https://github.com/kornysietsma/claude-code-permissions-hook) - Korny Sietsma's well-structured permission system with excellent audit logging
-
