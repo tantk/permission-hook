@@ -106,26 +106,29 @@ fn split_command_segments(command: &str) -> Vec<String> {
     }
 }
 
-/// Strip redirections and heredocs from a command segment
+/// Strip simple redirections from a command segment (NOT heredocs - those are parsed separately)
 fn strip_redirections(segment: &str) -> String {
     let segment = segment.trim();
 
-    // Strip heredoc: << 'EOF' or <<EOF or << "EOF" and everything after
-    let segment = if let Ok(heredoc_re) = Regex::new(r"\s*<<\s*\S+.*$") {
-        heredoc_re.replace(segment, "").to_string()
+    // Don't strip heredocs - they're handled by parse_heredoc
+    // Only strip simple redirections like >, >>, 2>&1
+
+    // Strip 2>&1 style first (before general redirects)
+    let segment = if let Ok(redirect2_re) = Regex::new(r"\s*\d*>&\d*") {
+        redirect2_re.replace_all(segment, "").to_string()
     } else {
         segment.to_string()
     };
 
-    // Strip 2>&1 style first (before general redirects)
-    let segment = if let Ok(redirect2_re) = Regex::new(r"\s*\d*>&\d*") {
-        redirect2_re.replace_all(&segment, "").to_string()
+    // Strip output redirections: >, >> with their targets (but NOT << which is heredoc)
+    let segment = if let Ok(redirect_re) = Regex::new(r"\s*\d*>>?\s*\S+") {
+        redirect_re.replace_all(&segment, "").to_string()
     } else {
         segment
     };
 
-    // Strip output/input redirections: >, >>, <, 2>, etc. with their targets
-    let segment = if let Ok(redirect_re) = Regex::new(r"\s*\d*[<>]+\s*\S+") {
+    // Strip input redirection < (single, not <<)
+    let segment = if let Ok(redirect_re) = Regex::new(r"\s*<(?!<)\s*\S+") {
         redirect_re.replace_all(&segment, "").to_string()
     } else {
         segment
@@ -156,8 +159,43 @@ pub struct InlineScript {
     pub content: String,
 }
 
+/// Parse heredoc syntax: python << 'EOF' ... EOF
+fn parse_heredoc(command: &str) -> Option<InlineScript> {
+    // Match: python/python3/node << 'DELIMITER' or <<DELIMITER or <<"DELIMITER"
+    let heredoc_start = Regex::new(r#"(?s)^(python3?|node)\s*<<\s*['"]?(\w+)['"]?\s*\n(.*)"#).ok()?;
+
+    if let Some(caps) = heredoc_start.captures(command) {
+        let interpreter = caps.get(1)?.as_str();
+        let delimiter = caps.get(2)?.as_str();
+        let rest = caps.get(3)?.as_str();
+
+        // Find the closing delimiter (must be on its own line)
+        let end_pattern = format!(r"(?m)^{}\s*$", regex::escape(delimiter));
+        if let Ok(end_re) = Regex::new(&end_pattern) {
+            if let Some(end_match) = end_re.find(rest) {
+                let content = &rest[..end_match.start()];
+                let script_type = match interpreter {
+                    "node" => "node",
+                    _ => "python",
+                };
+                return Some(InlineScript {
+                    script_type: script_type.into(),
+                    content: content.trim().into(),
+                });
+            }
+        }
+    }
+
+    None
+}
+
 pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
     // Note: cd prefixes are now stripped by split_command_segments before this is called
+
+    // Try heredoc parsing first (python << 'EOF' ... EOF)
+    if let Some(script) = parse_heredoc(command) {
+        return Some(script);
+    }
 
     // Python: python -c "..." or python3 -c "..." (handles multi-line)
     let python_re = Regex::new(r#"(?s)^python3?\s+-c\s+["'](.*)["']"#).ok()?;
@@ -502,5 +540,36 @@ mod tests {
         let response = HookResponse::deny("Test reason");
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"permissionDecision\":\"deny\""));
+    }
+
+    #[test]
+    fn test_parse_heredoc_python() {
+        let command = "python << 'PYEOF'\nimport os\nprint('hello')\nPYEOF";
+        let script = parse_heredoc(command);
+        assert!(script.is_some());
+        let script = script.unwrap();
+        assert_eq!(script.script_type, "python");
+        assert!(script.content.contains("import os"));
+        assert!(script.content.contains("print"));
+    }
+
+    #[test]
+    fn test_parse_heredoc_with_dangerous_content() {
+        let config = test_config();
+        let command = "python << 'EOF'\nimport os\nos.remove('file.txt')\nEOF";
+        let script = parse_heredoc(command);
+        assert!(script.is_some());
+        let script = script.unwrap();
+        let (safe, _reason) = is_inline_script_safe(&config, &script);
+        assert!(!safe); // Should detect os.remove as dangerous
+    }
+
+    #[test]
+    fn test_auto_approve_safe_heredoc() {
+        let config = test_config();
+        let command = "cd /path && python << 'EOF'\nimport pandas\nprint('hi')\nEOF";
+        let input = serde_json::json!({"command": command});
+        let result = is_auto_approved(&config, "Bash", &input);
+        assert!(result.is_some()); // Should be approved - no dangerous patterns
     }
 }
