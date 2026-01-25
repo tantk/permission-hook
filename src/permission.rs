@@ -90,6 +90,63 @@ impl HookResponse {
 }
 
 // ============================================================================
+// Command Segment Parsing
+// ============================================================================
+
+/// Split a command on shell operators (|, &&, ||, ;) and return individual segments
+fn split_command_segments(command: &str) -> Vec<String> {
+    // Split on pipe, and, or, semicolon
+    if let Ok(split_re) = Regex::new(r"\s*(\|\||&&|;|\|)\s*") {
+        split_re.split(command)
+            .map(|s| strip_redirections(s.trim()))
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        vec![command.to_string()]
+    }
+}
+
+/// Strip redirections and heredocs from a command segment
+fn strip_redirections(segment: &str) -> String {
+    let segment = segment.trim();
+
+    // Strip heredoc: << 'EOF' or <<EOF or << "EOF" and everything after
+    let segment = if let Ok(heredoc_re) = Regex::new(r"\s*<<\s*\S+.*$") {
+        heredoc_re.replace(segment, "").to_string()
+    } else {
+        segment.to_string()
+    };
+
+    // Strip 2>&1 style first (before general redirects)
+    let segment = if let Ok(redirect2_re) = Regex::new(r"\s*\d*>&\d*") {
+        redirect2_re.replace_all(&segment, "").to_string()
+    } else {
+        segment
+    };
+
+    // Strip output/input redirections: >, >>, <, 2>, etc. with their targets
+    let segment = if let Ok(redirect_re) = Regex::new(r"\s*\d*[<>]+\s*\S+") {
+        redirect_re.replace_all(&segment, "").to_string()
+    } else {
+        segment
+    };
+
+    segment.trim().to_string()
+}
+
+/// Check if a single command segment matches any of the patterns
+fn segment_matches_patterns(segment: &str, patterns: &[String]) -> bool {
+    for pattern in patterns {
+        if let Ok(re) = Regex::new(pattern) {
+            if re.is_match(segment) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// ============================================================================
 // Inline Script Parsing
 // ============================================================================
 
@@ -99,21 +156,8 @@ pub struct InlineScript {
     pub content: String,
 }
 
-/// Strip common prefixes like "cd path &&" from commands
-fn strip_cd_prefix(command: &str) -> &str {
-    // Match: cd <path> && <rest>
-    if let Some(pos) = command.find("&&") {
-        let prefix = &command[..pos];
-        if prefix.trim().starts_with("cd ") {
-            return command[pos + 2..].trim();
-        }
-    }
-    command
-}
-
 pub fn parse_inline_script(command: &str) -> Option<InlineScript> {
-    // Strip common prefixes like "cd path &&" before parsing
-    let command = strip_cd_prefix(command);
+    // Note: cd prefixes are now stripped by split_command_segments before this is called
 
     // Python: python -c "..." or python3 -c "..." (handles multi-line)
     let python_re = Regex::new(r#"(?s)^python3?\s+-c\s+["'](.*)["']"#).ok()?;
@@ -226,23 +270,49 @@ pub fn is_auto_approved(config: &Config, tool_name: &str, input: &serde_json::Va
         if let Some(command) = input.get("command").and_then(|c| c.as_str()) {
             let command = command.trim();
 
-            // Check against safe patterns
-            for pattern in &config.auto_approve.bash_patterns {
-                if let Ok(re) = Regex::new(pattern) {
-                    if re.is_match(command) {
-                        return Some("safe pattern".into());
+            // Split into segments and check each one
+            let segments = split_command_segments(command);
+
+            // All segments must be approved
+            let mut all_approved = true;
+            let mut approval_reason = String::new();
+
+            for segment in &segments {
+                let segment = segment.trim();
+                if segment.is_empty() || segment == "cd" || segment.starts_with("cd ") {
+                    // cd is always safe, skip it
+                    continue;
+                }
+
+                let mut segment_approved = false;
+
+                // Check against safe patterns
+                if segment_matches_patterns(segment, &config.auto_approve.bash_patterns) {
+                    segment_approved = true;
+                    if approval_reason.is_empty() {
+                        approval_reason = "safe pattern".into();
                     }
+                }
+
+                // Check inline scripts
+                if !segment_approved && config.inline_scripts.enabled {
+                    if let Some(script) = parse_inline_script(segment) {
+                        let (safe, reason) = is_inline_script_safe(config, &script);
+                        if safe {
+                            segment_approved = true;
+                            approval_reason = reason;
+                        }
+                    }
+                }
+
+                if !segment_approved {
+                    all_approved = false;
+                    break;
                 }
             }
 
-            // Check inline scripts
-            if config.inline_scripts.enabled {
-                if let Some(script) = parse_inline_script(command) {
-                    let (safe, reason) = is_inline_script_safe(config, &script);
-                    if safe {
-                        return Some(reason);
-                    }
-                }
+            if all_approved && !approval_reason.is_empty() {
+                return Some(approval_reason);
             }
         }
     }
@@ -267,11 +337,13 @@ pub fn is_auto_denied(config: &Config, tool_name: &str, input: &serde_json::Valu
     // Check Bash commands against dangerous patterns
     if tool_name == "Bash" {
         if let Some(command) = input.get("command").and_then(|c| c.as_str()) {
-            for pattern in &config.auto_deny.bash_patterns {
-                if let Ok(re) = Regex::new(pattern) {
-                    if re.is_match(command) {
-                        return Some("dangerous pattern".into());
-                    }
+            // Split into segments and check each one
+            let segments = split_command_segments(command);
+
+            // If ANY segment matches dangerous pattern, deny
+            for segment in &segments {
+                if segment_matches_patterns(segment, &config.auto_deny.bash_patterns) {
+                    return Some("dangerous pattern".into());
                 }
             }
         }

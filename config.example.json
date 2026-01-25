@@ -32,8 +32,8 @@
       "^(cmd\\s+/c\\s+)?cargo\\s+(build|test|check|clippy|fmt|run)",
       "^curl\\s",
       "^wget\\s",
-      "^(cd\\s+[^&]+&&\\s*)?ls(\\s|$)",
-      "^(cd\\s+[^&]+&&\\s*)?\\.?/?gradlew(\\.bat)?\\s+"
+      "^ls(\\s|$)",
+      "^\\.?/?gradlew(\\.bat)?\\s+"
       "^pwd$",
       "^echo\\s",
       "^cat\\s",
