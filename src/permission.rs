@@ -137,11 +137,71 @@ fn strip_redirections(segment: &str) -> String {
     segment.trim().to_string()
 }
 
+/// Normalize a command by stripping path from the program name
+/// "C:\path\to\adb.exe" logcat -c  →  adb logcat -c
+/// /usr/bin/python3 script.py  →  python3 script.py
+fn normalize_program_path(segment: &str) -> String {
+    let segment = segment.trim();
+
+    // Handle quoted path: "C:\path\to\program.exe" args
+    if segment.starts_with('"') {
+        if let Some(end_quote) = segment[1..].find('"') {
+            let quoted_path = &segment[1..end_quote + 1];
+            let rest = segment[end_quote + 2..].trim_start();
+
+            // Extract program name from path
+            let program = extract_program_name(quoted_path);
+
+            if rest.is_empty() {
+                return program;
+            } else {
+                return format!("{} {}", program, rest);
+            }
+        }
+    }
+
+    // Handle unquoted path with backslash or forward slash
+    let first_space = segment.find(' ').unwrap_or(segment.len());
+    let first_part = &segment[..first_space];
+
+    if first_part.contains('\\') || first_part.contains('/') {
+        let program = extract_program_name(first_part);
+        let rest = segment[first_space..].trim_start();
+
+        if rest.is_empty() {
+            return program;
+        } else {
+            return format!("{} {}", program, rest);
+        }
+    }
+
+    segment.to_string()
+}
+
+/// Extract program name from a path, stripping .exe extension
+fn extract_program_name(path: &str) -> String {
+    // Get the last component of the path
+    let name = path
+        .rsplit(|c| c == '\\' || c == '/')
+        .next()
+        .unwrap_or(path);
+
+    // Strip .exe extension (case-insensitive)
+    if name.to_lowercase().ends_with(".exe") {
+        name[..name.len() - 4].to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 /// Check if a single command segment matches any of the patterns
 fn segment_matches_patterns(segment: &str, patterns: &[String]) -> bool {
+    // Normalize the segment first (strip paths)
+    let normalized = normalize_program_path(segment);
+
     for pattern in patterns {
         if let Ok(re) = Regex::new(pattern) {
-            if re.is_match(segment) {
+            if re.is_match(&normalized) {
                 return true;
             }
         }
@@ -332,9 +392,10 @@ pub fn is_auto_approved(config: &Config, tool_name: &str, input: &serde_json::Va
                     }
                 }
 
-                // Check inline scripts
+                // Check inline scripts (normalize path first)
                 if !segment_approved && config.inline_scripts.enabled {
-                    if let Some(script) = parse_inline_script(segment) {
+                    let normalized = normalize_program_path(segment);
+                    if let Some(script) = parse_inline_script(&normalized) {
                         let (safe, reason) = is_inline_script_safe(config, &script);
                         if safe {
                             segment_approved = true;
@@ -571,5 +632,34 @@ mod tests {
         let input = serde_json::json!({"command": command});
         let result = is_auto_approved(&config, "Bash", &input);
         assert!(result.is_some()); // Should be approved - no dangerous patterns
+    }
+
+    #[test]
+    fn test_normalize_quoted_windows_path() {
+        let segment = r#""C:\Users\test\AppData\Local\adb.exe" logcat -c"#;
+        let normalized = normalize_program_path(segment);
+        assert_eq!(normalized, "adb logcat -c");
+    }
+
+    #[test]
+    fn test_normalize_unquoted_windows_path() {
+        // Paths with spaces should be quoted; unquoted paths typically don't have spaces
+        let segment = r"C:\tools\git\bin\git.exe status";
+        let normalized = normalize_program_path(segment);
+        assert_eq!(normalized, "git status");
+    }
+
+    #[test]
+    fn test_normalize_unix_path() {
+        let segment = "/usr/bin/python3 script.py";
+        let normalized = normalize_program_path(segment);
+        assert_eq!(normalized, "python3 script.py");
+    }
+
+    #[test]
+    fn test_normalize_no_path() {
+        let segment = "git status";
+        let normalized = normalize_program_path(segment);
+        assert_eq!(normalized, "git status");
     }
 }
