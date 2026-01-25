@@ -25,7 +25,7 @@ A fast, Rust-based permission handler and notification system for Claude Code.
 winget install Rustlang.Rust.MSVC
 
 # Clone and build
-git clone https://github.com/user/claude-permission-hook.git
+git clone https://github.com/tantk/claude-permission-hook.git
 cd claude-permission-hook
 cargo build --release
 
