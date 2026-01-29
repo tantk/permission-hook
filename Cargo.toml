@@ -1,6 +1,6 @@
 [package]
 name = "claude-permission-hook"
-version = "1.0.0"
+version = "1.0.5"
 edition = "2021"
 description = "Fast permission hook for Claude Code and other AI coding assistants"
 license = "MIT"
