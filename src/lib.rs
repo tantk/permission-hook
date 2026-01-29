@@ -11,3 +11,4 @@ pub mod summary;
 pub mod notifier;
 pub mod audio;
 pub mod webhook;
+pub mod update;

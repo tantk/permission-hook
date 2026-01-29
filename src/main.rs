@@ -18,6 +18,7 @@ mod summary;
 mod notifier;
 mod audio;
 mod webhook;
+mod update;
 
 use config::{load_config, Config};
 use permission::{HookInput, HookResponse, is_auto_approved, is_auto_denied, ask_llm, extract_details};
@@ -29,6 +30,7 @@ use notifier::{send_notification, send_alert_notification, should_notify};
 use summary::{generate_summary, generate_session_name};
 use audio::{play_sound, play_alert_sound};
 use webhook::{send_webhook, should_send_webhook, CircuitBreaker, RateLimiter};
+use update::{check_for_update, mark_notified};
 
 use std::io::{self, BufRead};
 
@@ -68,6 +70,17 @@ fn handle_pre_tool_use(config: &Config, input: &HookInput, state_mgr: &StateMana
 
         eprintln!("[permission-hook] DENY: {} - {}", tool_name, reason);
         std::process::exit(2);
+    }
+
+    // Trust mode: auto-approve everything that wasn't denied
+    if config.features.trust_mode {
+        let reason = "trust mode enabled";
+        log_decision(config, &tool_name, "allow", reason, details_ref);
+        debug(config, &format!("ALLOW (trust mode): {} - {}", tool_name, details_ref.unwrap_or("no details")));
+
+        let response = HookResponse::allow(reason);
+        println!("{}", serde_json::to_string(&response).unwrap());
+        std::process::exit(0);
     }
 
     // Tier 3: Ambiguous - use LLM if configured, otherwise prompt user
@@ -215,6 +228,19 @@ fn handle_stop(
     // Cleanup old locks/state
     let _ = dedup_mgr.cleanup(60);
     let _ = state_mgr.cleanup(60);
+
+    // Check for updates (non-blocking, cached)
+    if let Some((current, latest)) = check_for_update(config) {
+        let update_msg = format!("Update available: v{} → {}", current, latest);
+        debug(config, &update_msg);
+
+        // Send update notification
+        if let Err(e) = notifier::send_update_notification(config, &current, &latest) {
+            logging::warn(&format!("Failed to send update notification: {}", e));
+        } else {
+            mark_notified();
+        }
+    }
 }
 
 /// Handle SubagentStop hook event

@@ -95,14 +95,79 @@ impl HookResponse {
 
 /// Split a command on shell operators (|, &&, ||, ;) and return individual segments
 fn split_command_segments(command: &str) -> Vec<String> {
-    // Split on pipe, and, or, semicolon
-    if let Ok(split_re) = Regex::new(r"\s*(\|\||&&|;|\|)\s*") {
-        split_re.split(command)
-            .map(|s| strip_redirections(s.trim()))
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
+    // Split on pipe, and, or, semicolon - but respect quoted strings
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut chars = command.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if !in_double_quote => {
+                in_single_quote = !in_single_quote;
+                current.push(c);
+            }
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+                current.push(c);
+            }
+            '\\' if in_double_quote || in_single_quote => {
+                // Escaped character inside quotes - keep both
+                current.push(c);
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                }
+            }
+            '|' if !in_single_quote && !in_double_quote => {
+                // Check for || (logical OR)
+                if chars.peek() == Some(&'|') {
+                    chars.next(); // consume second |
+                }
+                // Either way, it's a segment boundary
+                let trimmed = strip_redirections(current.trim());
+                if !trimmed.is_empty() {
+                    segments.push(trimmed);
+                }
+                current = String::new();
+            }
+            '&' if !in_single_quote && !in_double_quote => {
+                // Check for && (logical AND)
+                if chars.peek() == Some(&'&') {
+                    chars.next(); // consume second &
+                    let trimmed = strip_redirections(current.trim());
+                    if !trimmed.is_empty() {
+                        segments.push(trimmed);
+                    }
+                    current = String::new();
+                } else {
+                    // Single & (background) - just include it
+                    current.push(c);
+                }
+            }
+            ';' if !in_single_quote && !in_double_quote => {
+                let trimmed = strip_redirections(current.trim());
+                if !trimmed.is_empty() {
+                    segments.push(trimmed);
+                }
+                current = String::new();
+            }
+            _ => {
+                current.push(c);
+            }
+        }
+    }
+
+    // Don't forget the last segment
+    let trimmed = strip_redirections(current.trim());
+    if !trimmed.is_empty() {
+        segments.push(trimmed);
+    }
+
+    if segments.is_empty() {
         vec![command.to_string()]
+    } else {
+        segments
     }
 }
 
@@ -661,5 +726,53 @@ mod tests {
         let segment = "git status";
         let normalized = normalize_program_path(segment);
         assert_eq!(normalized, "git status");
+    }
+
+    #[test]
+    fn test_split_segments_simple_pipe() {
+        let segments = split_command_segments("ls | head");
+        assert_eq!(segments, vec!["ls", "head"]);
+    }
+
+    #[test]
+    fn test_split_segments_and() {
+        let segments = split_command_segments("cd /path && git status");
+        assert_eq!(segments, vec!["cd /path", "git status"]);
+    }
+
+    #[test]
+    fn test_split_segments_pipe_in_double_quotes() {
+        // Pipe inside double quotes should NOT split
+        let segments = split_command_segments(r#"grep -n "once_cell\|lazy_static" src/*.rs"#);
+        assert_eq!(segments.len(), 1);
+        assert!(segments[0].contains("once_cell"));
+    }
+
+    #[test]
+    fn test_split_segments_pipe_in_single_quotes() {
+        // Pipe inside single quotes should NOT split
+        let segments = split_command_segments("grep -E 'foo|bar' file.txt");
+        assert_eq!(segments.len(), 1);
+        assert!(segments[0].contains("foo|bar"));
+    }
+
+    #[test]
+    fn test_split_segments_mixed_quotes_and_pipe() {
+        // cd && grep with pattern | head
+        let cmd = r#"cd /path && grep -n "a\|b" file.rs | head -20"#;
+        let segments = split_command_segments(cmd);
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0], "cd /path");
+        assert!(segments[1].contains(r#""a\|b""#));
+        assert_eq!(segments[2], "head -20");
+    }
+
+    #[test]
+    fn test_grep_with_regex_pipe_auto_approved() {
+        let config = test_config();
+        let cmd = r#"cd "/path" && grep -n "once_cell\|lazy_static" src/*.rs | head -20"#;
+        let input = serde_json::json!({"command": cmd});
+        let result = is_auto_approved(&config, "Bash", &input);
+        assert!(result.is_some(), "grep with regex pipe should be auto-approved");
     }
 }

@@ -92,6 +92,35 @@ fn truncate_detail(s: &str, max_len: usize) -> String {
     }
 }
 
+/// Send an update notification when a new version is available
+pub fn send_update_notification(
+    config: &Config,
+    current: &str,
+    latest: &str,
+) -> Result<(), String> {
+    if !config.notifications.desktop.enabled {
+        return Ok(());
+    }
+
+    let title = "Update Available";
+    let body = format!(
+        "claude-permission-hook v{} → {}\n\nRun: cargo install --path . or download from GitHub",
+        current, latest
+    );
+
+    let result = Notification::new()
+        .summary(title)
+        .body(&body)
+        .appname("Claude Code")
+        .timeout(notify_rust::Timeout::Milliseconds(10000))
+        .show();
+
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("Failed to send update notification: {}", e)),
+    }
+}
+
 /// Check if notifications should be sent for this status
 pub fn should_notify(config: &Config, status: Status) -> bool {
     if !config.notifications.desktop.enabled {

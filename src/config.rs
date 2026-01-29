@@ -24,6 +24,8 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub notifications: NotificationsConfig,
+    #[serde(default)]
+    pub updates: UpdatesConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -32,6 +34,10 @@ pub struct FeaturesConfig {
     pub permission_checking: bool,
     #[serde(default = "default_true")]
     pub notifications: bool,
+    /// Trust mode: auto-approve all commands EXCEPT those matching auto_deny patterns.
+    /// This is useful for development workflows where you want minimal prompts.
+    #[serde(default)]
+    pub trust_mode: bool,
 }
 
 impl Default for FeaturesConfig {
@@ -39,6 +45,7 @@ impl Default for FeaturesConfig {
         Self {
             permission_checking: true,
             notifications: true,
+            trust_mode: false,
         }
     }
 }
@@ -156,6 +163,36 @@ fn default_cooldown() -> i64 { 12 }
 fn default_volume() -> f32 { 1.0 }
 fn default_webhook_preset() -> String { "custom".to_string() }
 fn default_retry_attempts() -> u32 { 3 }
+fn default_check_interval_hours() -> u64 { 24 }
+fn default_github_repo() -> String { "anthropics/claude-code".to_string() }
+
+// ============================================================================
+// Updates Configuration
+// ============================================================================
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct UpdatesConfig {
+    #[serde(default)]
+    pub check_enabled: bool,
+    #[serde(default = "default_check_interval_hours")]
+    pub check_interval_hours: u64,
+    #[serde(default = "default_github_repo")]
+    pub github_repo: String,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self {
+            check_enabled: false,
+            check_interval_hours: 24,
+            github_repo: default_github_repo(),
+        }
+    }
+}
+
+pub fn get_update_state_path() -> PathBuf {
+    get_config_dir().join("update_state.json")
+}
 
 // ============================================================================
 // Path Helpers
@@ -201,7 +238,17 @@ pub fn default_config() -> Config {
                 r"^cat\s".into(),
                 r"^head\s".into(),
                 r"^tail\s".into(),
-                r"^npm\s+(list|ls|outdated|view|info|search)".into(),
+                r"^grep\s".into(),
+                r"^find\s".into(),
+                r"^wc\s".into(),
+                r"^stat\s".into(),
+                r"^tree(\s|$)".into(),
+                r"^sort(\s|$)".into(),
+                r"^tee\s".into(),
+                r"^sed\s".into(),
+                r"^npm\s+(test|run|start|list|ls|outdated|view|info|search)".into(),
+                r"^npx\s+(vitest|jest|mocha|eslint|prettier|tsc|tsx|ts-node)\s".into(),
+                r"^pnpm\s+(test|run|start|list|ls|outdated|patch|add|install)".into(),
                 r"^node\s+--version".into(),
                 r"^python3?\s+--version".into(),
                 r"^pip3?\s+(list|show|search)".into(),
@@ -290,6 +337,7 @@ pub fn default_config() -> Config {
         },
         logging: LoggingConfig { enabled: true, verbose: false },
         notifications: NotificationsConfig::default(),
+        updates: UpdatesConfig::default(),
     }
 }
 
