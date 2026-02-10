@@ -14,19 +14,31 @@ A fast, Rust-based permission handler and notification system for Claude Code.
 
 ### Option 1: Download Release (Recommended)
 
-1. Download `claude-permission-hook.exe` from [Releases](https://github.com/user/claude-permission-hook/releases)
+**Windows:**
+1. Download `claude-permission-hook.exe` from [Releases](https://github.com/tantk/permission-hook/releases)
 2. Place in `%USERPROFILE%\.local\bin\` (create folder if needed)
+3. Configure Claude Code (see below)
+
+**Linux / macOS:**
+1. Download `claude-permission-hook` from [Releases](https://github.com/tantk/permission-hook/releases)
+2. Make it executable and place in `~/.local/bin/`:
+   ```bash
+   chmod +x claude-permission-hook
+   mkdir -p ~/.local/bin
+   mv claude-permission-hook ~/.local/bin/
+   ```
 3. Configure Claude Code (see below)
 
 ### Option 2: Build from Source
 
+**Windows (PowerShell):**
 ```powershell
 # Install Rust (if needed)
 winget install Rustlang.Rust.MSVC
 
 # Clone and build
-git clone https://github.com/tantk/claude-permission-hook.git
-cd claude-permission-hook
+git clone https://github.com/tantk/permission-hook.git
+cd permission-hook
 cargo build --release
 
 # Copy to install location
@@ -34,11 +46,26 @@ mkdir $env:USERPROFILE\.local\bin -Force
 copy target\release\claude-permission-hook.exe $env:USERPROFILE\.local\bin\
 ```
 
+**Linux / macOS:**
+```bash
+# Install Rust (if needed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Clone and build
+git clone https://github.com/tantk/permission-hook.git
+cd permission-hook
+cargo build --release
+
+# Copy to install location
+mkdir -p ~/.local/bin
+cp target/release/claude-permission-hook ~/.local/bin/
+```
+
 ## Configuration
 
 ### Step 1: Configure Claude Code Hooks
 
-Add to `%USERPROFILE%\.claude\settings.json`:
+**Windows** - Add to `%USERPROFILE%\.claude\settings.json`:
 
 ```json
 {
@@ -71,9 +98,42 @@ Add to `%USERPROFILE%\.claude\settings.json`:
 
 Replace `YOUR_USERNAME` with your Windows username.
 
+**Linux / macOS** - Add to `~/.claude/settings.json` (see also `hooks.example.json`):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [{ "type": "command", "command": "~/.local/bin/claude-permission-hook" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "~/.local/bin/claude-permission-hook" }]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [{ "type": "command", "command": "~/.local/bin/claude-permission-hook" }]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [{ "type": "command", "command": "~/.local/bin/claude-permission-hook" }]
+      }
+    ]
+  }
+}
+```
+
 ### Step 2: Create Plugin Config (Optional)
 
-Create `%USERPROFILE%\.claude-permission-hook\config.json`:
+Create the config file:
+- **Windows:** `%USERPROFILE%\.claude-permission-hook\config.json`
+- **Linux / macOS:** `~/.claude-permission-hook/config.json`
 
 ```json
 {
@@ -186,7 +246,9 @@ Scripts are auto-approved unless they contain dangerous patterns:
 
 ## Log Format
 
-Logs saved to `%USERPROFILE%\.claude-permission-hook\decisions.log`:
+Logs saved to:
+- **Windows:** `%USERPROFILE%\.claude-permission-hook\decisions.log`
+- **Linux / macOS:** `~/.claude-permission-hook/decisions.log`
 
 ```csv
 timestamp,tool,decision,reason,details
@@ -216,11 +278,17 @@ Disable features independently:
 1. Check if tool is in `auto_approve.tools`
 2. Check if pattern matches `auto_approve.bash_patterns`
 3. Enable verbose logging: `"logging": { "verbose": true }`
-4. Check log: `type %USERPROFILE%\.claude-permission-hook\decisions.log`
+4. Check log:
+   - **Windows:** `type %USERPROFILE%\.claude-permission-hook\decisions.log`
+   - **Linux / macOS:** `cat ~/.claude-permission-hook/decisions.log`
 
 ### No notifications
 1. Check `features.notifications: true`
 2. Check `notifications.desktop.enabled: true`
+
+### No notifications (Linux)
+1. Ensure a notification daemon is running (e.g., `dunst`, `mako`, or your desktop environment's built-in notifications)
+2. The `notify-send` command should be available (`sudo apt install libnotify-bin` on Debian/Ubuntu)
 
 ### No alert sound on block
 1. Check `notifications.desktop.sound: true`
@@ -228,16 +296,17 @@ Disable features independently:
 
 ## Development
 
-```powershell
+```bash
 # Run tests
 cargo test
 
 # Build release
 cargo build --release
-
-# Binary location
-target\release\claude-permission-hook.exe
 ```
+
+Binary location:
+- **Linux / macOS:** `target/release/claude-permission-hook`
+- **Windows:** `target\release\claude-permission-hook.exe`
 
 ## License
 

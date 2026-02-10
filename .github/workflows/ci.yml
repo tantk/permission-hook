@@ -11,7 +11,15 @@ env:
 
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            binary: target/release/claude-permission-hook.exe
+          - os: ubuntu-latest
+            binary: target/release/claude-permission-hook
+
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
@@ -28,7 +36,14 @@ jobs:
     - name: Build Release
       run: cargo build --release
 
-    - name: Check Binary Size
+    - name: Check Binary Size (Windows)
+      if: runner.os == 'Windows'
       run: |
         $size = (Get-Item target/release/claude-permission-hook.exe).Length / 1MB
         Write-Host "Binary size: $([math]::Round($size, 2)) MB"
+
+    - name: Check Binary Size (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        size=$(stat --format=%s target/release/claude-permission-hook)
+        echo "Binary size: $(echo "scale=2; $size/1048576" | bc) MB"

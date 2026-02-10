@@ -33,7 +33,7 @@
       "^curl\\s",
       "^wget\\s",
       "^ls(\\s|$)",
-      "^\\.?/?gradlew(\\.bat)?\\s+"
+      "^\\.?/?gradlew(\\.bat)?\\s+",
       "^pwd$",
       "^echo\\s",
       "^cat\\s",
