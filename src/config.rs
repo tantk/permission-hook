@@ -164,7 +164,7 @@ fn default_volume() -> f32 { 1.0 }
 fn default_webhook_preset() -> String { "custom".to_string() }
 fn default_retry_attempts() -> u32 { 3 }
 fn default_check_interval_hours() -> u64 { 24 }
-fn default_github_repo() -> String { "anthropics/claude-code".to_string() }
+fn default_github_repo() -> String { "tantk/permission-hook".to_string() }
 
 // ============================================================================
 // Updates Configuration

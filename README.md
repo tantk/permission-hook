@@ -251,6 +251,7 @@ Enable verbose debug output to stderr with `"logging": { "verbose": true }`.
 | `notifications` | `suppress_question_after_task_complete_seconds` | int | `12` | Cooldown after task complete |
 | `notifications` | `suppress_question_after_any_notification_seconds` | int | `12` | Cooldown after any notification |
 | `notifications` | `notify_on_subagent_stop` | bool | `false` | Notify on subagent finish |
+| `notifications` | `notify_on_text_response` | bool | `true` | Notify on text response |
 | `updates` | `check_enabled` | bool | `false` | Check for new versions |
 | `updates` | `check_interval_hours` | int | `24` | Hours between checks |
 | `updates` | `github_repo` | string | `"tantk/permission-hook"` | Repo to check for updates |

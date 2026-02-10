@@ -145,6 +145,7 @@
     },
     "suppress_question_after_task_complete_seconds": 12,
     "suppress_question_after_any_notification_seconds": 12,
-    "notify_on_subagent_stop": false
+    "notify_on_subagent_stop": false,
+    "notify_on_text_response": true
   }
 }
