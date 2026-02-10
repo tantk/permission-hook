@@ -10,6 +10,16 @@ A fast, Rust-based permission handler and notification system for Claude Code.
 
 **Performance:** ~1-5ms per call (vs ~50-100ms for Node.js hooks)
 
+**Minimum Rust version:** 1.70 (if building from source)
+
+## Quick Install (Linux / macOS)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/tantk/permission-hook/master/install.sh | bash
+```
+
+This downloads the binary (or builds from source), creates the default config, and configures Claude Code hooks automatically.
+
 ## Installation
 
 ### Option 1: Download Release (Recommended)
