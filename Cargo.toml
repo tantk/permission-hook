@@ -1,6 +1,6 @@
 [package]
 name = "claude-permission-hook"
-version = "1.0.5"
+version = "1.0.6"
 edition = "2021"
 rust-version = "1.70"
 description = "Fast permission hook for Claude Code and other AI coding assistants"
