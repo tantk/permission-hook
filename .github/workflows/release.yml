@@ -9,8 +9,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: linux-x64
+            artifact: claude-permission-hook
+            asset_name: claude-permission-hook-linux-x64
+          - runner: macos-13
+            target: darwin-x64
+            artifact: claude-permission-hook
+            asset_name: claude-permission-hook-darwin-x64
+          - runner: macos-latest
+            target: darwin-arm64
+            artifact: claude-permission-hook
+            asset_name: claude-permission-hook-darwin-arm64
+          - runner: windows-latest
+            target: windows-x64
+            artifact: claude-permission-hook.exe
+            asset_name: claude-permission-hook-windows-x64.exe
+
+    runs-on: ${{ matrix.runner }}
 
     steps:
     - uses: actions/checkout@v4
@@ -24,35 +44,22 @@ jobs:
     - name: Run Tests
       run: cargo test --release
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: claude-permission-hook-windows
-        path: target/release/claude-permission-hook.exe
+    - name: Rename artifact (Unix)
+      if: runner.os != 'Windows'
+      run: mv target/release/${{ matrix.artifact }} target/release/${{ matrix.asset_name }}
 
-  build-linux:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Build Release
-      run: cargo build --release
-
-    - name: Run Tests
-      run: cargo test --release
+    - name: Rename artifact (Windows)
+      if: runner.os == 'Windows'
+      run: Move-Item target/release/${{ matrix.artifact }} target/release/${{ matrix.asset_name }}
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: claude-permission-hook-linux
-        path: target/release/claude-permission-hook
+        name: ${{ matrix.asset_name }}
+        path: target/release/${{ matrix.asset_name }}
 
   release:
-    needs: [build-windows, build-linux]
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -60,40 +67,48 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Download Windows Artifact
+    - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
-        name: claude-permission-hook-windows
-        path: artifacts/windows/
+        path: artifacts/
 
-    - name: Download Linux Artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: claude-permission-hook-linux
-        path: artifacts/linux/
+    - name: Prepare release assets
+      run: |
+        mkdir -p release
+        # Move each artifact into the flat release/ directory
+        for dir in artifacts/*/; do
+          cp "$dir"* release/
+        done
+        ls -la release/
+
+    - name: Generate checksums
+      run: |
+        cd release
+        sha256sum * > checksums.txt
+        cat checksums.txt
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          artifacts/windows/claude-permission-hook.exe
-          artifacts/linux/claude-permission-hook
+        files: release/*
         body: |
           ## Installation
 
-          ### Windows
-          1. Download `claude-permission-hook.exe`
-          2. Place in `%USERPROFILE%\.local\bin\`
-          3. Configure Claude Code hooks (see README)
+          ### Linux / macOS (one-liner)
+          ```bash
+          curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/master/install.sh | bash
+          ```
 
-          ### Linux
-          1. Download `claude-permission-hook`
-          2. Run `chmod +x claude-permission-hook`
-          3. Place in `~/.local/bin/`
+          ### Windows
+          1. Download `claude-permission-hook-windows-x64.exe`
+          2. Rename to `claude-permission-hook.exe`
+          3. Place in `%USERPROFILE%\.local\bin\`
           4. Configure Claude Code hooks (see README)
 
-          ## What's New
+          ### Checksums
+          Verify your download with `checksums.txt`.
 
-          See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full documentation.
+          ## What's New
+          See [README](https://github.com/${{ github.repository }}/blob/master/README.md) for full documentation.
         draft: false
         prerelease: false

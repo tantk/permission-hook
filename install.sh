@@ -8,71 +8,209 @@ CONFIG_DIR="$HOME/.claude-permission-hook"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
 info()  { echo "[INFO]  $*"; }
+warn()  { echo "[WARN]  $*" >&2; }
 error() { echo "[ERROR] $*" >&2; exit 1; }
 
-# Detect OS
-detect_os() {
-  case "$(uname -s)" in
-    Linux*)  echo "linux" ;;
-    Darwin*) echo "macos" ;;
-    *)       error "Unsupported OS: $(uname -s). Use the Windows installer or build from source." ;;
-  esac
+# ============================================================================
+# Download abstraction (curl / wget)
+# ============================================================================
+
+DOWNLOADER=""
+detect_downloader() {
+  if command -v curl >/dev/null 2>&1; then
+    DOWNLOADER="curl"
+  elif command -v wget >/dev/null 2>&1; then
+    DOWNLOADER="wget"
+  else
+    error "Either curl or wget is required but neither is installed."
+  fi
 }
 
-# Try to download pre-built binary from GitHub releases
-download_binary() {
-  local os="$1"
-  local asset_name="$BINARY_NAME"
+# Download a URL. Usage: download_file <url> [output_file]
+# If output_file is omitted, prints to stdout.
+download_file() {
+  local url="$1"
+  local output="${2:-}"
 
-  info "Checking for latest release..."
-  local latest_url
-  latest_url="https://github.com/$REPO/releases/latest/download/$asset_name"
+  if [ "$DOWNLOADER" = "curl" ]; then
+    if [ -n "$output" ]; then
+      curl -fsSL -o "$output" "$url"
+    else
+      curl -fsSL "$url"
+    fi
+  elif [ "$DOWNLOADER" = "wget" ]; then
+    if [ -n "$output" ]; then
+      wget -q -O "$output" "$url"
+    else
+      wget -q -O - "$url"
+    fi
+  else
+    return 1
+  fi
+}
 
-  local tmp_file
-  tmp_file="$(mktemp)"
+# ============================================================================
+# Platform detection
+# ============================================================================
 
-  if curl -fsSL -o "$tmp_file" "$latest_url" 2>/dev/null; then
-    chmod +x "$tmp_file"
-    # Verify it's actually an executable, not an HTML error page
-    if file "$tmp_file" | grep -qiE "ELF|Mach-O"; then
-      mkdir -p "$INSTALL_DIR"
-      mv "$tmp_file" "$INSTALL_DIR/$BINARY_NAME"
-      info "Downloaded pre-built binary to $INSTALL_DIR/$BINARY_NAME"
-      return 0
+detect_platform() {
+  # Detect OS
+  case "$(uname -s)" in
+    Linux*)  OS="linux" ;;
+    Darwin*) OS="darwin" ;;
+    *)       error "Unsupported OS: $(uname -s). Windows users: download the .exe from GitHub Releases." ;;
+  esac
+
+  # Detect architecture
+  case "$(uname -m)" in
+    x86_64|amd64)  ARCH="x64" ;;
+    arm64|aarch64) ARCH="arm64" ;;
+    *)             error "Unsupported architecture: $(uname -m)" ;;
+  esac
+
+  # Rosetta 2 detection: if running x64 shell under Rosetta on an ARM Mac,
+  # prefer the native arm64 binary
+  if [ "$OS" = "darwin" ] && [ "$ARCH" = "x64" ]; then
+    if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
+      info "Rosetta 2 detected — using native arm64 binary."
+      ARCH="arm64"
     fi
   fi
 
-  rm -f "$tmp_file"
-  return 1
+  PLATFORM="${OS}-${ARCH}"
+  info "Detected platform: $PLATFORM"
 }
 
-# Build from source
-build_from_source() {
-  info "No pre-built binary available. Building from source..."
+# ============================================================================
+# Checksum verification
+# ============================================================================
 
-  if ! command -v cargo &>/dev/null; then
+verify_checksum() {
+  local file="$1"
+  local expected="$2"
+
+  local actual
+  if command -v shasum >/dev/null 2>&1; then
+    actual=$(shasum -a 256 "$file" | cut -d' ' -f1)
+  elif command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$file" | cut -d' ' -f1)
+  else
+    warn "Neither shasum nor sha256sum found — skipping checksum verification."
+    return 0
+  fi
+
+  if [ "$actual" != "$expected" ]; then
+    error "Checksum verification failed. Expected: $expected  Got: $actual"
+  fi
+
+  info "Checksum verified."
+}
+
+# ============================================================================
+# Binary download
+# ============================================================================
+
+download_binary() {
+  local base_url="https://github.com/$REPO/releases/latest/download"
+  local asset_name="${BINARY_NAME}-${PLATFORM}"
+  local asset_url="${base_url}/${asset_name}"
+
+  TMP_FILE="$(mktemp)"
+  # Clean up temp file on any exit
+  trap 'rm -f "$TMP_FILE"' EXIT
+
+  info "Downloading $asset_name ..."
+  if ! download_file "$asset_url" "$TMP_FILE"; then
+    warn "Download failed for $asset_name."
+    return 1
+  fi
+
+  # Verify it's an actual binary, not an HTML error page
+  if command -v file >/dev/null 2>&1; then
+    if ! file "$TMP_FILE" | grep -qiE "ELF|Mach-O"; then
+      warn "Downloaded file is not a valid executable."
+      return 1
+    fi
+  fi
+
+  # Checksum verification (best-effort: skip if checksums.txt is unavailable)
+  local checksums
+  if checksums=$(download_file "${base_url}/checksums.txt" "" 2>/dev/null); then
+    local expected
+    expected=$(echo "$checksums" | grep "$asset_name" | awk '{print $1}')
+    if [ -n "$expected" ]; then
+      verify_checksum "$TMP_FILE" "$expected"
+    else
+      warn "Asset not found in checksums.txt — skipping verification."
+    fi
+  else
+    warn "checksums.txt not available — skipping verification."
+  fi
+
+  mkdir -p "$INSTALL_DIR"
+  chmod +x "$TMP_FILE"
+  mv "$TMP_FILE" "$INSTALL_DIR/$BINARY_NAME"
+  # Disarm the trap since the file was moved successfully
+  trap - EXIT
+  info "Installed binary to $INSTALL_DIR/$BINARY_NAME"
+  return 0
+}
+
+# ============================================================================
+# Build from source (fallback)
+# ============================================================================
+
+build_from_source() {
+  info "No pre-built binary available for $PLATFORM. Building from source..."
+
+  if ! command -v cargo >/dev/null 2>&1; then
     info "Rust not found. Installing via rustup..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    if [ "$DOWNLOADER" = "curl" ]; then
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    else
+      wget -qO - https://sh.rustup.rs | sh -s -- -y
+    fi
+    # shellcheck source=/dev/null
     source "$HOME/.cargo/env"
   fi
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap "rm -rf '$tmp_dir'" EXIT
+  trap 'rm -rf "$tmp_dir"' EXIT
 
   info "Cloning repository..."
   git clone --depth 1 "https://github.com/$REPO.git" "$tmp_dir"
 
-  info "Building release binary..."
+  info "Building release binary (this may take a few minutes)..."
   cargo build --release --manifest-path "$tmp_dir/Cargo.toml"
 
   mkdir -p "$INSTALL_DIR"
   cp "$tmp_dir/target/release/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
   chmod +x "$INSTALL_DIR/$BINARY_NAME"
+  trap - EXIT
+  rm -rf "$tmp_dir"
   info "Built and installed to $INSTALL_DIR/$BINARY_NAME"
 }
 
-# Install the default config if none exists
+# ============================================================================
+# PATH check
+# ============================================================================
+
+check_path() {
+  case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *)
+      warn "$INSTALL_DIR is not in your PATH."
+      info "Add it by appending this to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
+      info "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+      ;;
+  esac
+}
+
+# ============================================================================
+# Default config
+# ============================================================================
+
 install_config() {
   if [ -f "$CONFIG_DIR/config.json" ]; then
     info "Config already exists at $CONFIG_DIR/config.json, skipping."
@@ -85,7 +223,8 @@ install_config() {
 {
   "features": {
     "permission_checking": true,
-    "notifications": true
+    "notifications": true,
+    "trust_mode": true
   },
   "auto_approve": {
     "tools": ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "TaskList", "TaskGet", "TaskCreate", "TaskUpdate", "Edit", "Write"],
@@ -136,7 +275,10 @@ install_config() {
 CONFIGEOF
 }
 
-# Configure Claude Code hooks
+# ============================================================================
+# Claude Code hooks
+# ============================================================================
+
 configure_hooks() {
   local hook_cmd="$INSTALL_DIR/$BINARY_NAME"
 
@@ -183,20 +325,24 @@ configure_hooks() {
 HOOKSEOF
 }
 
+# ============================================================================
+# Main
+# ============================================================================
+
 main() {
   info "Installing Claude Permission Hook..."
 
-  local os
-  os="$(detect_os)"
-  info "Detected OS: $os"
+  detect_downloader
+  detect_platform
 
-  # Try download first, fall back to build
-  if ! download_binary "$os"; then
+  # Try pre-built binary first, fall back to building from source
+  if ! download_binary; then
     build_from_source
   fi
 
   install_config
   configure_hooks
+  check_path
 
   info ""
   info "Installation complete!"

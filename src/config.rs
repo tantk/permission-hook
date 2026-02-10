@@ -36,7 +36,7 @@ pub struct FeaturesConfig {
     pub notifications: bool,
     /// Trust mode: auto-approve all commands EXCEPT those matching auto_deny patterns.
     /// This is useful for development workflows where you want minimal prompts.
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub trust_mode: bool,
 }
 
@@ -45,7 +45,7 @@ impl Default for FeaturesConfig {
         Self {
             permission_checking: true,
             notifications: true,
-            trust_mode: false,
+            trust_mode: true,
         }
     }
 }

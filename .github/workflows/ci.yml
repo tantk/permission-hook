@@ -18,6 +18,8 @@ jobs:
             binary: target/release/claude-permission-hook.exe
           - os: ubuntu-latest
             binary: target/release/claude-permission-hook
+          - os: macos-latest
+            binary: target/release/claude-permission-hook
 
     runs-on: ${{ matrix.os }}
 
@@ -42,8 +44,12 @@ jobs:
         $size = (Get-Item target/release/claude-permission-hook.exe).Length / 1MB
         Write-Host "Binary size: $([math]::Round($size, 2)) MB"
 
-    - name: Check Binary Size (Linux)
-      if: runner.os == 'Linux'
+    - name: Check Binary Size (Unix)
+      if: runner.os != 'Windows'
       run: |
-        size=$(stat --format=%s target/release/claude-permission-hook)
+        if [ "$(uname -s)" = "Darwin" ]; then
+          size=$(stat -f%z "${{ matrix.binary }}")
+        else
+          size=$(stat --format=%s "${{ matrix.binary }}")
+        fi
         echo "Binary size: $(echo "scale=2; $size/1048576" | bc) MB"

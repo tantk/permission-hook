@@ -1,7 +1,8 @@
 {
   "features": {
     "permission_checking": true,
-    "notifications": true
+    "notifications": true,
+    "trust_mode": true
   },
   "auto_approve": {
     "tools": [
